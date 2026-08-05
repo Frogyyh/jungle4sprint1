@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07111c" />
+    <title>Project2 — Breachline</title>
+    <script type="module" src="./game.js"></script>
+    <link rel="stylesheet" href="./styles.css" />
+
+  </head>
+  <body>
+    <div id="game-shell">
+      <canvas id="game-canvas" aria-label="Breachline game canvas"></canvas>
+
+      <div id="hud" class="hud hidden" aria-live="polite">
+        <div class="hud-top">
+          <div class="brand"><span class="brand-mark">✦</span><span>BREACHLINE</span><small>PROTOTYPE</small></div>
+          <div class="round-readout"><span id="timer">03:00</span><span class="dot">•</span><span id="enemies">5 HOSTILES</span></div>
+        </div>
+        <div class="hud-bottom">
+          <div class="health-block">
+            <div class="label-row"><span>VITALS</span><span id="health-text">100 / 100</span></div>
+            <div class="bar"><i id="health-bar"></i></div>
+          </div>
+          <div class="weapon-block">
+            <div class="weapon-name" id="weapon-name">RIFLE</div>
+            <div class="ammo"><span id="ammo">24</span><b>/</b><span id="reserve">96</span></div>
+            <div class="reload-hint" id="reload-hint">R TO RELOAD</div>
+            <div id="reload-progress" class="reload-progress" role="progressbar" aria-label="재장전 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="reload-progress-bar"></i></div>
+          </div>
+          <div class="gadget-block">
+            <div id="flash-gadget" class="gadget"><span class="key">2</span><span>FLASH</span><strong id="flash-count">99</strong></div>
+            <div id="smoke-gadget" class="gadget smoke-gadget"><span class="key smoke-key">3</span><span>SMOKE</span><strong id="smoke-count">99</strong></div>
+          </div>
+        </div>
+        <div id="status-message" class="status-message"></div>
+        <div class="tactical-panel"><strong id="map-layout">LAYOUT // CROSSROADS</strong><span id="zoom-status">VIEW 1.00×</span><span id="flash-status" class="flash-status"></span></div>
+        <div id="debug" class="debug hidden"></div>
+      </div>
+
+      <div id="flash-overlay" class="flash-overlay hidden"></div>
+      <div id="smoke-overlay" class="smoke-overlay"></div>
+      <div id="damage-overlay" class="damage-overlay"></div>
+      <div id="muzzle-flash" class="muzzle-flash"></div>
+      <div id="hitmarker" class="hitmarker"><i></i><i></i><i></i><i></i></div>
+      <div id="throw-telegraphs" class="throw-telegraphs"><div id="throw-vector" class="throw-vector"></div><div id="throw-preview" class="throw-telegraph preview hidden"><div class="telegraph-sweep"></div><div class="telegraph-core"><span class="telegraph-icon">✦</span></div><span class="telegraph-time">100%</span></div></div>
+      <div id="grenade-charge" class="grenade-charge"><div class="grenade-charge-label"><span id="grenade-charge-name">FLASH THROW</span><span id="grenade-charge-range">100%</span></div><div class="grenade-charge-track"><i id="grenade-charge-bar"></i></div></div>
+      <div id="crosshair" class="crosshair hidden"><span></span></div>
+
+      <section id="loadout" class="screen-card">
+        <div class="eyebrow">OPERATION // NIGHTFALL</div>
+        <h1>BREACH<span>LINE</span></h1>
+        <p class="subtitle">Top-down tactical shooter prototype</p>
+        <p class="briefing">좌측 스폰에서 진입해 반대편의 적 5명을 제거하십시오. 좁은 시야와 중앙 엄폐물을 관리하고, 투척물로 다음 교전 각도를 만드세요.</p>
+        <div class="loadout-grid">
+          <button class="weapon-card selected" data-weapon="rifle">
+            <span class="weapon-icon rifle-icon">╱</span><span class="card-title">RIFLE</span>
+            <span class="card-copy">낮은 스프레드 · 느린 연사<br />높은 STK · 중거리 TTK</span>
+          </button>
+          <button class="weapon-card" data-weapon="shotgun">
+            <span class="weapon-icon shotgun-icon">▦</span><span class="card-title">SHOTGUN</span>
+            <span class="card-copy">8 펠릿 · 넓은 스프레드<br />근거리 한 발 제압</span>
+          </button>
+          <button class="weapon-card" data-weapon="smg">
+            <span class="weapon-icon smg-icon">≋</span><span class="card-title">SMG</span>
+            <span class="card-copy">높은 스프레드 · 빠른 연사<br />중간 STK · 빠른 TTK</span>
+          </button>
+          <button class="weapon-card" data-weapon="frog">
+            <span class="weapon-icon frog-icon">●</span><span class="card-title">FROG</span>
+            <span class="card-copy">좌클릭 비눗방울 분사 · 적중 시 둔화<br />SPACE 혀 · 벽 고정 후 A/D 스윙</span>
+          </button>
+        </div>
+        <div class="controls"><span><b>WASD</b> 이동</span><span><b>마우스</b> 조준</span><span><b>좌클릭</b> 사격</span><span><b>2 / 3</b> 투척물 장착</span><span><b>좌클릭 홀드</b> 투척 거리</span><span><b>휠</b> 시야 배율</span><span><b>R</b> 재장전</span></div>
+        <button id="start-button" class="primary-button">작전 시작 <span>↗</span></button>
+        <div class="seed-line">LOCAL SIMULATION · PLAYER 01 vs AI 05</div>
+      </section>
+
+      <section id="pause-screen" class="screen-card compact hidden">
+        <div class="eyebrow">SYSTEM PAUSED</div><h2>잠시 멈춤</h2><p>Esc를 눌러 작전으로 돌아갑니다.</p>
+        <button id="resume-button" class="primary-button">계속하기</button>
+      </section>
+
+      <section id="result-screen" class="screen-card hidden">
+        <div class="eyebrow" id="result-eyebrow">OPERATION COMPLETE</div>
+        <h2 id="result-title">MISSION SUCCESS</h2>
+        <p id="result-copy"></p>
+        <div class="result-stats"><div><b id="result-kills">0</b><span>HOSTILES</span></div><div><b id="result-accuracy">0%</b><span>ACCURACY</span></div><div><b id="result-time">00:00</b><span>TIME</span></div></div>
+        <button id="restart-button" class="primary-button">다시 시작 <span>↻</span></button>
+      </section>
+
+      <div id="toast" class="toast" aria-live="polite"></div>
+      <script src="./quality-pass.js"></script>
+      <script src="./frog.js"></script>
+      <script src="./lobby-bridge.js"></script>
+    </div>
+  </body>
+</html>

@@ -56,3 +56,5 @@
 .weapon-card[data-weapon="frog"].selected{border-color:#45df78;background:#45df781f}
 @media(max-width:760px){.loadout-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:620px){.loadout-grid{grid-template-columns:1fr}}
+
+.lobby-return-button{margin-left:10px;background:#d8e3e8}

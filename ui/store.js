@@ -308,10 +308,19 @@ export function addTestMember(roomId, characterId = null) {
 /* ---------------- 게임 진입 ---------------- */
 
 /** 로비 → 게임(루트 index.html). 게임 자체 로드아웃 화면에서 작전이 시작된다. */
-export const GAME_URL = "../index.html";
+export const GAME_URL = "../game.html";
 
 export function startGame() {
-  location.href = GAME_URL;
+  const room = getJoinedRoom();
+  const nickname = getNickname();
+  const player = room ? findMember(room, nickname) : null;
+  const params = new URLSearchParams({ lobby: "1" });
+
+  if (nickname) params.set("nickname", nickname);
+  if (player?.characterId) params.set("character", player.characterId);
+  if (room?.mapId) params.set("map", room.mapId);
+
+  location.href = `${GAME_URL}?${params}`;
 }
 
 /** 게임의 현재 조작 체계. index.html 로드아웃 화면과 같은 내용을 쓴다. */
@@ -319,6 +328,8 @@ export const CONTROLS = [
   ["WASD", "이동"],
   ["마우스", "조준"],
   ["좌클릭", "사격"],
+  ["SPACE", "개구리 혀 / 벽 스윙"],
+  ["A / D", "혀 부착 중 좌우 회전"],
   ["2 / 3", "투척물 장착"],
   ["좌클릭 홀드", "투척 거리"],
   ["휠", "시야 배율"],
