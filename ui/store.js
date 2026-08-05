@@ -61,7 +61,7 @@ const SEED_ROOMS = [
     host: "야간투시경",
     capacity: 4,
     mapId: "crossroads",
-    members: [member("야간투시경", "A", false, "vulcan"), member("탄창", "B", true, "wasp")],
+    members: [member("야간투시경", "A", false, "soldier"), member("탄창", "B", true, "gunslinger")],
   },
   {
     id: "r2",
@@ -71,9 +71,9 @@ const SEED_ROOMS = [
     password: "1234",
     mapId: "offset",
     members: [
-      member("브리치", "A", false, "longshot"),
+      member("브리치", "A", false, "sentinel"),
       member("각도장인", "A", true, "bulwark"),
-      member("연막탄", "B", true, "shade"),
+      member("연막탄", "B", true, "ninja"),
     ],
   },
   {
@@ -83,10 +83,10 @@ const SEED_ROOMS = [
     capacity: 4,
     mapId: "open-lanes",
     members: [
-      member("근접전문", "A", false, "buckshot"),
-      member("돌격대장", "A", true, "buckshot"),
-      member("문지기", "B", true, "buckshot"),
-      member("코너캠퍼", "B", true, "buckshot"),
+      member("근접전문", "A", false, "hunter"),
+      member("돌격대장", "A", true, "hunter"),
+      member("문지기", "B", true, "hunter"),
+      member("코너캠퍼", "B", true, "hunter"),
     ],
   },
   {
@@ -104,7 +104,7 @@ const SEED_ROOMS = [
     capacity: 4,
     password: "9876",
     mapId: "open-lanes",
-    members: [member("스모크장인", "A", false, "mortar"), member("개구리", "B", true, "frog")],
+    members: [member("스모크장인", "A", false, "demolitionist"), member("개구리", "B", true, "frog")],
   },
   {
     id: "r6",
@@ -112,7 +112,7 @@ const SEED_ROOMS = [
     host: "플래시뱅",
     capacity: 2,
     mapId: "offset",
-    members: [member("플래시뱅", "A", false, "edge")],
+    members: [member("플래시뱅", "A", false, "ninja")],
   },
 ];
 
@@ -323,15 +323,14 @@ export function startGame() {
   location.href = `${GAME_URL}?${params}`;
 }
 
-/** 게임의 현재 조작 체계. index.html 로드아웃 화면과 같은 내용을 쓴다. */
+/** 게임의 현재 조작 체계. 병과 공통 입력을 기준으로 쓴다. */
 export const CONTROLS = [
   ["WASD", "이동"],
   ["마우스", "조준"],
-  ["좌클릭", "사격"],
-  ["SPACE", "개구리 혀 / 벽 스윙"],
-  ["A / D", "혀 부착 중 좌우 회전"],
-  ["2 / 3", "투척물 장착"],
-  ["좌클릭 홀드", "투척 거리"],
+  ["좌클릭", "기본 공격"],
+  ["우클릭", "특수 공격"],
+  ["SPACE", "특수 능력"],
+  ["2 / 3 / 4", "군인 수류탄 / 섬광탄 / 연막탄"],
   ["휠", "시야 배율"],
   ["R", "재장전"],
 ];

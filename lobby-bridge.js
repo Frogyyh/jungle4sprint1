@@ -1,20 +1,11 @@
 (() => {
   const params = new URLSearchParams(location.search);
   const launchedFromLobby = params.get("lobby") === "1";
-  const characterId = params.get("character") || "vulcan";
+  const characterId = window.resolveBreachlineOperatorId(params.get("character") || "soldier");
   const nickname = params.get("nickname") || "PLAYER";
   const mapId = params.get("map") || "crossroads";
 
-  const weaponByCharacter = {
-    vulcan: "rifle", buckshot: "shotgun", wasp: "smg", frog: "frog",
-    gemini: "smg", bulwark: "rifle", longshot: "rifle", edge: "shotgun",
-    shade: "smg", mortar: "shotgun",
-  };
-  const characterNames = {
-    vulcan: "VULCAN", buckshot: "BUCKSHOT", wasp: "WASP", frog: "FROG",
-    gemini: "GEMINI", bulwark: "BULWARK", longshot: "LONGSHOT", edge: "EDGE",
-    shade: "SHADE", mortar: "MORTAR",
-  };
+  const operator = window.findBreachlineOperator(characterId);
 
   function addLobbyButton() {
     const result = document.querySelector("#result-screen");
@@ -40,14 +31,13 @@
     document.body.dataset.lobbyMap = mapId;
     if (!launchedFromLobby) return;
 
-    const weapon = weaponByCharacter[characterId] || "rifle";
-    game.selectedWeapon = weapon;
-    document.querySelectorAll("[data-weapon]").forEach((card) => {
-      card.classList.toggle("selected", card.dataset.weapon === weapon);
+    game.selectedOperatorId = operator.id;
+    game.selectedWeapon = operator.baseWeapon;
+    document.querySelectorAll("[data-operator]").forEach((card) => {
+      card.classList.toggle("selected", card.dataset.operator === operator.id);
     });
     game.startRound();
-    const characterName = characterNames[characterId] || "VULCAN";
-    setTimeout(() => game.showToast(`${nickname} · ${characterName} READY`), 50);
+    setTimeout(() => game.showToast(`${nickname} · ${operator.name} READY`), 50);
   }
 
   install();

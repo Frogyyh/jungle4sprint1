@@ -11,17 +11,16 @@
     game.__qualityPassApplied = true;
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
     const $ = (selector) => document.querySelector(selector);
     const FLASH_RADIUS = 200;
-    const FLASH_DURATION = 1.5;
-    const SMOKE_DURATION = 12;
+    const FLASH_DURATION = 1;
+    const SMOKE_DURATION = 10;
     const AI_FAIR_RANGE = 620;
-    const VIEW_CONE_RADIANS = 45 * Math.PI / 180;
 
     const ui = {
       flashGadget: $("#flash-gadget"),
       smokeGadget: $("#smoke-gadget"),
+      fragGadget: $("#frag-gadget"),
       charge: $("#grenade-charge"),
       chargeName: $("#grenade-charge-name"),
       chargeRange: $("#grenade-charge-range"),
@@ -40,9 +39,6 @@
     ui.telegraphs = $("#throw-telegraphs");
     ui.throwPreview = $("#throw-preview");
     ui.throwVector = $("#throw-vector");
-    ui.throwPreviewSweep = ui.throwPreview.querySelector(".telegraph-sweep");
-    ui.throwPreviewIcon = ui.throwPreview.querySelector(".telegraph-icon");
-    ui.throwPreviewTime = ui.throwPreview.querySelector(".telegraph-time");
 
     game.viewScale = 1;
     game.cameraShake = 0;
@@ -156,9 +152,11 @@
         { x: 5, y: 17, w: 6, h: 6, color: 0x26363d }
       ],
       shield_pistol: [
-        { x: 0, y: 24, w: 20, h: 18, color: 0x738aa0 },
-        { x: 6, y: 34, w: 4, h: 15, color: 0xffc36f },
-        { x: 0, y: 24, w: 13, h: 11, color: 0x26363d }
+        { x: 0, y: 24, w: 44, h: 22, color: 0x738aa0, opacity: 0.9 },
+        { x: 13, y: 36, w: 4, h: 16, color: 0xffc36f },
+        { x: 0, y: 24, w: 31, h: 14, color: 0x26363d, opacity: 0.86 },
+        { x: -19, y: 24, w: 5, h: 20, color: 0x9bb5ff },
+        { x: 19, y: 24, w: 5, h: 20, color: 0x9bb5ff }
       ],
       railgun: [
         { x: -3.5, y: 30, w: 2.5, h: 31, color: 0x9bb5ff },
@@ -180,7 +178,7 @@
         { x: 0, y: 17, w: 13, h: 2.5, color: 0xffab63 },
         { x: 0, y: 12, w: 4, h: 8, color: 0x3a4850 }
       ],
-      shuriken: [
+      dagger: [
         { x: 0, y: 27, w: 3, h: 18, r: 0.78, color: 0xd5e4e7 },
         { x: 0, y: 27, w: 3, h: 18, r: -0.78, color: 0xd5e4e7 },
         { x: 0, y: 27, w: 6, h: 6, color: 0x637780 }
@@ -199,9 +197,10 @@
     const weaponVisualAliases = {
       "dual-pistols": "dual_pistols", akimbo: "dual_pistols",
       "shield-pistol": "shield_pistol", shield: "shield_pistol",
-      "frog-tongue": "frog_tongue", tongue: "frog_tongue",
+      "frog-tongue": "frog_tongue", tongue: "frog_tongue", frog: "frog_tongue",
       "bolt-action": "bolt_action", sniper: "bolt_action",
-      "grenade-launcher": "grenade_launcher", launcher: "grenade_launcher"
+      "grenade-launcher": "grenade_launcher", launcher: "grenade_launcher",
+      shuriken: "dagger"
     };
 
     const applyWeaponVisual = (actor, requestedId = actor.weapon?.id || "rifle") => {
@@ -232,6 +231,16 @@
         piece.scale.set(shape.w / 7, shape.h / 12, 1);
         piece.rotation.z = shape.r || 0;
         piece.material.color.setHex(shape.color);
+        piece.material.transparent = shape.opacity !== undefined;
+        piece.material.opacity = shape.opacity ?? 1;
+        piece.material.depthWrite = shape.opacity === undefined;
+        piece.userData = {
+          ...piece.userData,
+          breachlineWeaponPiece: true,
+          breachlineBaseX: shape.x,
+          breachlineBaseY: shape.y,
+          breachlineBaseRotation: shape.r || 0,
+        };
       });
       actor._visualWeaponId = id;
     };
@@ -266,6 +275,10 @@
       band.userData = { breachlineGrenadeDetail: true };
       mesh.add(band);
     };
+    game.styleGrenadeMesh = styleGrenadeMesh;
+
+    const gadgetRadius = (type) => ({ flash: 200, smoke: 150, frag: 100, launcher: 67 }[type] || 100);
+    game.getGadgetRadius = gadgetRadius;
 
     const predictGrenadeLanding = (actor, type, power, target) => {
       const direction = target
@@ -275,8 +288,8 @@
       direction.normalize();
 
       const position = actor.pos.clone().add(direction.clone().multiplyScalar(32));
-      const velocity = direction.clone().multiplyScalar(500 * clamp(power, 0.8, 2));
-      let fuse = type === "flash" ? 1.05 : 0.8;
+      const velocity = direction.clone().multiplyScalar((type === "launcher" ? 620 : 500) * clamp(power, 0.8, 2));
+      let fuse = type === "frag" ? 2 : 1.5;
       const fixedStep = 1 / 60;
       while (fuse > 0) {
         const step = Math.min(fixedStep, fuse);
@@ -331,7 +344,7 @@
     game._grenadeTelegraphs = new Map();
     const syncGrenadeTelegraphs = () => {
       const activeIds = new Set();
-      for (const grenade of game.grenades.slice(0, 8)) {
+      for (const grenade of game.grenades) {
         const key = String(grenade.id);
         activeIds.add(key);
         let element = game._grenadeTelegraphs.get(key);
@@ -342,14 +355,14 @@
           ui.telegraphs.appendChild(element);
           game._grenadeTelegraphs.set(key, element);
         }
-        const destination = grenade.predictedLanding || grenade.pos;
+        const destination = grenade.pos;
         const initialFuse = Math.max(0.01, grenade.initialFuse || grenade.fuse);
         const progress = 1 - grenade.fuse / initialFuse;
         positionTelegraph(
           element,
           destination,
           grenade.type,
-          grenade.type === "flash" ? FLASH_RADIUS : 150,
+          gadgetRadius(grenade.type),
           progress,
           `${Math.max(0, grenade.fuse).toFixed(1)}s`,
           grenade.owner.team === "enemy"
@@ -361,6 +374,7 @@
         game._grenadeTelegraphs.delete(key);
       }
       game.canvas.dataset.activeGrenadeTelegraphs = String(activeIds.size);
+      game.canvas.dataset.grenadeTelegraphAnchor = "projectile";
     };
 
     const updateThrowPreview = () => {
@@ -399,6 +413,7 @@
       game.mouse.down = false;
       ui.flashGadget.classList.remove("selected");
       ui.smokeGadget.classList.remove("selected");
+      ui.fragGadget?.classList.remove("selected");
       ui.charge.classList.remove("active");
       ui.throwPreview.classList.add("hidden");
       ui.throwPreview.classList.remove("landing-only");
@@ -406,7 +421,9 @@
     };
 
     const selectGadget = (type) => {
-      const count = type === "flash" ? game.player.flashGrenades : game.player.smokeGrenades;
+      const count = game.getGadgetCount
+        ? game.getGadgetCount(type)
+        : type === "flash" ? game.player.flashGrenades : game.player.smokeGrenades;
       if (count <= 0) {
         game.showToast(`${type.toUpperCase()} EMPTY`);
         clearGadget();
@@ -421,15 +438,16 @@
       game._selectedGadget = type;
       ui.flashGadget.classList.toggle("selected", type === "flash");
       ui.smokeGadget.classList.toggle("selected", type === "smoke");
+      ui.fragGadget?.classList.toggle("selected", type === "frag");
       ui.chargeName.textContent = `${type.toUpperCase()} THROW`;
       game.showToast(`${type.toUpperCase()} EQUIPPED`);
     };
+    game.clearGadget = clearGadget;
+    game.selectGadget = selectGadget;
 
     const originalResetRound = game.resetRound.bind(game);
     game.resetRound = function (showLoadout = true) {
       originalResetRound(showLoadout);
-      this.player.flashGrenades = 99;
-      this.player.smokeGrenades = 99;
       this.cameraShake = 0;
       this._flashFeedback = [];
       this._incomingUntil = 0;
@@ -470,6 +488,9 @@
 
     const originalThrowGrenade = game.throwGrenade.bind(game);
     game.throwGrenade = function (requestedType, actor, target) {
+      if (requestedType !== "flash" && requestedType !== "smoke" && this.createSpecialGrenade) {
+        return this.createSpecialGrenade(requestedType, actor, target);
+      }
       let type = requestedType;
       let throwTarget = target;
 
@@ -495,6 +516,7 @@
       }
 
       const grenade = this.grenades[this.grenades.length - 1];
+      grenade.fuse = 1.5;
       grenade.vel.multiplyScalar(power);
       grenade.throwPower = power;
       grenade.initialFuse = grenade.fuse;
@@ -528,9 +550,9 @@
         const dx = grenade.pos.x - actor.pos.x;
         const dy = grenade.pos.y - actor.pos.y;
         const distance = Math.hypot(dx, dy);
-        const clearLine = !this.rayBlocked(actor.pos, grenade.pos);
-        const inRange = clearLine && distance <= FLASH_RADIUS;
+        const inRange = distance <= FLASH_RADIUS;
         if (!inRange) continue;
+        if (actor === this.player && this._operatorDash?.invulnerable) continue;
 
         const duration = FLASH_DURATION;
         actor.flashedUntil = Math.max(actor.flashedUntil, this.now + duration);
@@ -541,9 +563,13 @@
         }
         affected.push({ actor, duration });
 
-        const originalColor = actor.team === "player" ? 7202527 : 16737381;
+        const originalColor = actor.body.material.color.getHex();
+        const colorToken = (actor._breachlineColorPulseSerial || 0) + 1;
+        actor._breachlineColorPulseSerial = colorToken;
         actor.body.material.color.setHex(0xffffff);
-        window.setTimeout(() => actor.body.material.color.setHex(originalColor), 110);
+        window.setTimeout(() => {
+          if (actor._breachlineColorPulseSerial === colorToken) actor.body.material.color.setHex(originalColor);
+        }, 110);
       }
 
       this._flashFeedback = affected.map(({ actor, duration }) => ({
@@ -563,6 +589,9 @@
     game.fire = function (actor, direction) {
       const shotsBefore = actor.shots;
       originalFire(actor, direction);
+      if (actor.shots > shotsBefore && actor.ammo === 0 && actor.reserve > 0) {
+        this.reload(actor);
+      }
       if (actor === this.player && actor.shots > shotsBefore) {
         const kick = actor.weapon.id === "shotgun" ? 7 : actor.weapon.id === "smg" ? 2.6 : 3.8;
         this.cameraShake = Math.min(10, this.cameraShake + kick);
@@ -577,9 +606,13 @@
       originalDamageActor(source, target, amount);
       if (target.hp >= hpBefore) return;
 
-      const originalColor = target.team === "player" ? 7202527 : 16737381;
+      const originalColor = target.body.material.color.getHex();
+      const colorToken = (target._breachlineColorPulseSerial || 0) + 1;
+      target._breachlineColorPulseSerial = colorToken;
       target.body.material.color.setHex(0xffffff);
-      window.setTimeout(() => target.body.material.color.setHex(originalColor), 90);
+      window.setTimeout(() => {
+        if (target._breachlineColorPulseSerial === colorToken) target.body.material.color.setHex(originalColor);
+      }, 90);
 
       if (source === this.player) {
         ui.hitmarker.classList.toggle("kill", wasAlive && !target.alive);
@@ -659,10 +692,17 @@
         game.showToast("PRIMARY READY");
         return;
       }
-      if (event.code !== "Digit2" && event.code !== "Digit3") return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      selectGadget(event.code === "Digit2" ? "flash" : "smoke");
+      const gadgetByKey = { Digit2: "flash" };
+      if (["Digit2", "Digit3", "Digit4"].includes(event.code)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+      const gadgetType = gadgetByKey[event.code];
+      if (!gadgetType) return;
+      if (game.canUseGadget && !game.canUseGadget(gadgetType)) {
+        return;
+      }
+      selectGadget(gadgetType);
     }, true);
 
     game.canvas.addEventListener("pointerdown", (event) => {
@@ -691,7 +731,8 @@
       if (game.phase !== "playing") return;
       event.preventDefault();
       const direction = Math.sign(event.deltaY);
-      game.viewScale = clamp(game.viewScale + direction * 0.08, 1, 1.5);
+      const minimumScale = game.activeOperatorId === "sniper" ? 1.5 : 1;
+      game.viewScale = clamp(game.viewScale + direction * 0.08, minimumScale, 1.5);
       game.updateCameraFrustum();
       game.visibilityDirty = true;
       game.showToast(`VIEW ${game.viewScale.toFixed(2)}×`);
@@ -700,8 +741,6 @@
     game.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     window.addEventListener("blur", clearGadget);
 
-    game.player.flashGrenades = 99;
-    game.player.smokeGrenades = 99;
     applyLayout(0);
     applyWeaponVisual(game.player, game.player.weapon.id);
     game.bots.forEach((bot) => applyWeaponVisual(bot, bot.weapon.id));

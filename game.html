@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07111c" />
     <title>Project2 — Breachline</title>
+    <script src="./operators.js"></script>
     <script type="module" src="./game.js"></script>
     <link rel="stylesheet" href="./styles.css" />
 
@@ -30,12 +31,13 @@
             <div id="reload-progress" class="reload-progress" role="progressbar" aria-label="재장전 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="reload-progress-bar"></i></div>
           </div>
           <div class="gadget-block">
-            <div id="flash-gadget" class="gadget"><span class="key">2</span><span>FLASH</span><strong id="flash-count">99</strong></div>
-            <div id="smoke-gadget" class="gadget smoke-gadget"><span class="key smoke-key">3</span><span>SMOKE</span><strong id="smoke-count">99</strong></div>
+            <div id="frag-gadget" class="gadget frag-gadget hidden"><span class="key frag-key">2</span><span>FRAG</span><strong id="frag-count">0</strong></div>
+            <div id="flash-gadget" class="gadget hidden"><span class="key">2</span><span>FLASH</span><strong id="flash-count">0</strong></div>
+            <div id="smoke-gadget" class="gadget smoke-gadget hidden"><span class="key smoke-key">4</span><span>SMOKE</span><strong id="smoke-count">0</strong></div>
           </div>
         </div>
         <div id="status-message" class="status-message"></div>
-        <div class="tactical-panel"><strong id="map-layout">LAYOUT // CROSSROADS</strong><span id="zoom-status">VIEW 1.00×</span><span id="flash-status" class="flash-status"></span></div>
+        <div class="tactical-panel"><strong id="operator-status">SOLDIER // 군인</strong><span id="ability-status">RMB — · SPACE —</span><strong id="map-layout">LAYOUT // CROSSROADS</strong><span id="zoom-status">VIEW 1.00×</span><span id="flash-status" class="flash-status"></span></div>
         <div id="debug" class="debug hidden"></div>
       </div>
 
@@ -53,25 +55,8 @@
         <h1>BREACH<span>LINE</span></h1>
         <p class="subtitle">Top-down tactical shooter prototype</p>
         <p class="briefing">좌측 스폰에서 진입해 반대편의 적 5명을 제거하십시오. 좁은 시야와 중앙 엄폐물을 관리하고, 투척물로 다음 교전 각도를 만드세요.</p>
-        <div class="loadout-grid">
-          <button class="weapon-card selected" data-weapon="rifle">
-            <span class="weapon-icon rifle-icon">╱</span><span class="card-title">RIFLE</span>
-            <span class="card-copy">낮은 스프레드 · 느린 연사<br />높은 STK · 중거리 TTK</span>
-          </button>
-          <button class="weapon-card" data-weapon="shotgun">
-            <span class="weapon-icon shotgun-icon">▦</span><span class="card-title">SHOTGUN</span>
-            <span class="card-copy">8 펠릿 · 넓은 스프레드<br />근거리 한 발 제압</span>
-          </button>
-          <button class="weapon-card" data-weapon="smg">
-            <span class="weapon-icon smg-icon">≋</span><span class="card-title">SMG</span>
-            <span class="card-copy">높은 스프레드 · 빠른 연사<br />중간 STK · 빠른 TTK</span>
-          </button>
-          <button class="weapon-card" data-weapon="frog">
-            <span class="weapon-icon frog-icon">●</span><span class="card-title">FROG</span>
-            <span class="card-copy">좌클릭 비눗방울 분사 · 적중 시 둔화<br />SPACE 혀 · 벽 고정 후 A/D 스윙</span>
-          </button>
-        </div>
-        <div class="controls"><span><b>WASD</b> 이동</span><span><b>마우스</b> 조준</span><span><b>좌클릭</b> 사격</span><span><b>2 / 3</b> 투척물 장착</span><span><b>좌클릭 홀드</b> 투척 거리</span><span><b>휠</b> 시야 배율</span><span><b>R</b> 재장전</span></div>
+        <div id="operator-loadout-grid" class="loadout-grid operator-loadout-grid"></div>
+        <div class="controls"><span><b>WASD</b> 이동</span><span><b>마우스</b> 조준</span><span><b>좌클릭</b> 기본 공격</span><span><b>우클릭</b> 특수 공격</span><span><b>SPACE</b> 특수 능력</span><span><b>R</b> 재장전</span></div>
         <button id="start-button" class="primary-button">작전 시작 <span>↗</span></button>
         <div class="seed-line">LOCAL SIMULATION · PLAYER 01 vs AI 05</div>
       </section>
@@ -92,6 +77,7 @@
       <div id="toast" class="toast" aria-live="polite"></div>
       <script src="./quality-pass.js"></script>
       <script src="./frog.js"></script>
+      <script src="./operator-system.js"></script>
       <script src="./lobby-bridge.js"></script>
     </div>
   </body>

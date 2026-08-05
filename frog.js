@@ -9,20 +9,21 @@
     const FROG = {
       id: "frog",
       name: "FROG BUBBLE SPRAYER",
-      damage: 4,
-      pellets: 4,
+      damage: 3,
+      pellets: 5,
       rpm: 300,
       spreadDeg: 12,
-      magSize: 30,
-      reserve: 150,
-      reload: 1.4,
+      magSize: 999,
+      reserve: 9999,
+      reload: 2.5,
       range: 900,
       projectileSpeed: 1200,
       color: 0x7eeeff,
     };
     const vec = (x = 0, y = 0) => new game.player.pos.constructor(x, y);
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const isFrog = () => game.player.weapon && game.player.weapon.id === "frog";
+    const SPECIAL_COOLDOWN = 5;
+    const isFrog = () => game.activeOperatorId === "frog" || game.player.weapon?.id === "frog";
     let tongue = null;
     let tongueReadyAt = 0;
     let canLaunchTongue = true;
@@ -82,7 +83,11 @@
     };
 
     const beginTongue = () => {
-      if (!isFrog() || !canLaunchTongue || tongue || game.now < tongueReadyAt || !game.player.alive) return;
+      if (!isFrog() || !canLaunchTongue || tongue || !game.player.alive) return;
+      if (game.now < tongueReadyAt) {
+        game.showToast(`TONGUE ${(tongueReadyAt - game.now).toFixed(1)}s`);
+        return;
+      }
       canLaunchTongue = false;
       const direction = game.mouse.world.clone().sub(game.player.pos);
       if (direction.lengthSq() < 1) {
@@ -127,7 +132,7 @@
       if (!tongue || tongue.phase === "retracting") return;
       tongue.phase = "retracting";
       tongue.anchor = null;
-      tongueReadyAt = game.now + 0.08;
+      tongueReadyAt = game.now + SPECIAL_COOLDOWN;
     };
 
     const swing = (dt) => {
@@ -202,7 +207,7 @@
     const applyAppearance = (frog) => {
       game.player.body.material.color.setHex(frog ? 0x39d36f : 0x6de6df);
       game.player.ring.material.color.setHex(frog ? 0xa4ff8b : 0xc2fff7);
-      for (const child of game.player.mesh.children.slice(2)) child.visible = !frog;
+      for (const child of game.player.mesh.children.slice(2)) child.visible = true;
     };
 
     const originalStartRound = game.startRound.bind(game);
@@ -285,13 +290,13 @@
       const hpBefore = target.hp;
       originalDamageActor(source, target, amount);
       if (source === this.player && isFrog() && target.hp < hpBefore) {
-        target.slowUntil = this.now + 2.5;
+        target.slowUntil = this.now + 1;
       }
     };
 
     const originalMoveBot = game.moveBot.bind(game);
     game.moveBot = function moveSlowedBot(bot, dt, direction) {
-      const slowFactor = bot.slowUntil > this.now ? 0.45 : 1;
+      const slowFactor = bot.slowUntil > this.now ? 0.7 : 1;
       originalMoveBot(bot, dt * slowFactor, direction);
     };
 
@@ -317,7 +322,10 @@
         .map((bot) => Math.max(0, bot.slowUntil - this.now).toFixed(2))
         .join(",");
       this.canvas.dataset.soapBubbles = `${this.projectiles.filter((projectile) => projectile.isSoapBubble).length}`;
+      this.canvas.dataset.tongueCooldown = Math.max(0, tongueReadyAt - this.now).toFixed(2);
     };
+
+    game.getTongueCooldown = () => Math.max(0, tongueReadyAt - game.now);
 
     window.addEventListener("keydown", (event) => {
       if (event.code !== "Space" || event.repeat || game.phase !== "playing" || !isFrog()) return;

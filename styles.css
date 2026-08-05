@@ -45,7 +45,8 @@
       .telegraph-core{position:absolute;left:50%;top:50%;width:18px;height:18px;transform:translate(-50%,-50%);border:1px solid var(--telegraph);border-radius:50%;background:rgba(4,11,16,.68);box-shadow:0 0 10px var(--telegraph-soft)}
       .telegraph-core:before,.telegraph-core:after{content:"";position:absolute;background:var(--telegraph);opacity:.8}.telegraph-core:before{left:8px;top:-7px;width:1px;height:30px}.telegraph-core:after{left:-7px;top:8px;width:30px;height:1px}
       .telegraph-icon{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--telegraph);font-size:9px;font-weight:900}
-      .telegraph-time{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);padding:2px 5px;color:#f4fbfc;background:rgba(2,8,12,.72);font:800 9px/1 ui-monospace,monospace;letter-spacing:.08em;white-space:nowrap}
+      .throw-telegraph:not(.preview) .telegraph-icon{display:none}
+      .telegraph-time{position:absolute;left:50%;top:50%;bottom:auto;z-index:2;transform:translate(-50%,-50%);padding:2px 5px;color:#f4fbfc;background:rgba(2,8,12,.82);font:800 9px/1 ui-monospace,monospace;letter-spacing:.08em;white-space:nowrap}
       .throw-vector{position:absolute;height:1px;transform-origin:0 50%;background:repeating-linear-gradient(90deg,rgba(109,230,223,.85) 0 7px,transparent 7px 13px);filter:drop-shadow(0 0 4px rgba(109,230,223,.5));opacity:0}
       .throw-vector.active{opacity:.9}
       @keyframes telegraph-pulse{from{filter:brightness(.8);opacity:.66}to{filter:brightness(1.3);opacity:1}}
@@ -56,5 +57,21 @@
 .weapon-card[data-weapon="frog"].selected{border-color:#45df78;background:#45df781f}
 @media(max-width:760px){.loadout-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:620px){.loadout-grid{grid-template-columns:1fr}}
+
+/* 병과 선택/상태 UI */
+#loadout{width:min(1120px,calc(100vw - 36px));max-height:94vh;overflow:auto}
+.operator-loadout-grid{grid-template-columns:repeat(5,minmax(150px,1fr));max-width:1040px;gap:9px}
+.operator-card{--operator:#6de6df;position:relative;min-height:132px;padding:14px 12px;border:1px solid rgba(255,255,255,.11);color:var(--ink);background:linear-gradient(150deg,color-mix(in srgb,var(--operator) 8%,transparent),#ffffff05);text-align:left;font-family:inherit;cursor:pointer;transition:.18s ease}
+.operator-card:hover,.operator-card.selected{border-color:var(--operator);background:color-mix(in srgb,var(--operator) 18%,#061019);transform:translateY(-2px);box-shadow:0 10px 25px color-mix(in srgb,var(--operator) 15%,transparent)}
+.operator-card .operator-symbol{float:right;font-size:25px;filter:drop-shadow(0 0 8px color-mix(in srgb,var(--operator) 45%,transparent))}
+.operator-card .operator-korean{display:block;color:var(--operator);font-size:10px;font-weight:900;letter-spacing:.12em}
+.operator-card .card-title{margin:8px 0 3px;font-size:12px}
+.operator-card .operator-role{display:block;color:#8ea1aa;font-size:9px;letter-spacing:.1em}
+.operator-card .card-copy{display:block;margin-top:9px;font-size:9px;line-height:1.45}
+.frag-key{border-color:#ff6b67;color:#ff6b67}.gadget.selected.frag-gadget .key{background:#ff6b67;border-color:#ff6b67;color:#160405}
+#operator-status{color:#fff}.ability-ready{color:var(--cyan)!important}.ability-cooldown{color:var(--orange)!important}
+.rail-charge{filter:drop-shadow(0 0 12px #55f0b0)}
+@media(max-width:900px){.operator-loadout-grid{grid-template-columns:repeat(3,minmax(145px,1fr))}}
+@media(max-width:620px){#loadout{padding:28px 17px 22px}.operator-loadout-grid{grid-template-columns:repeat(2,minmax(125px,1fr))}.operator-card{min-height:120px}.operator-card .card-copy{display:none}}
 
 .lobby-return-button{margin-left:10px;background:#d8e3e8}

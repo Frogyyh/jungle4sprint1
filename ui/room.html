@@ -356,22 +356,24 @@
         margin: 6px 0 0;
       }
 
-      /* 일렬 나열 */
+      /* 10개 병과를 한눈에 비교하는 반응형 그리드 */
 
       .char-row {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(5, minmax(118px, 1fr));
         gap: 10px;
-        overflow-x: auto;
+        max-height: min(58vh, 520px);
+        overflow-y: auto;
         padding-bottom: 8px;
       }
 
       .char-card {
-        flex: 0 0 92px;
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 7px;
-        padding: 12px 6px;
+        min-height: 142px;
+        padding: 13px 8px;
         border: 1px solid var(--line);
         color: var(--ink);
         background: #ffffff09;
@@ -399,10 +401,20 @@
         letter-spacing: 0.1em;
       }
 
+      .char-card .ckorean {
+        color: var(--accent, var(--cyan));
+        font-size: 10px;
+        font-weight: 800;
+      }
+
       .char-card .crole {
         color: var(--muted);
         font-size: 9px;
         letter-spacing: 0.1em;
+      }
+
+      @media (max-width: 760px) {
+        .char-row { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
       }
 
       /* 상세: 왼쪽 이미지 / 오른쪽 설명 */
@@ -700,6 +712,7 @@
 
     <div id="toast" class="toast" aria-live="polite"></div>
 
+    <script src="../operators.js"></script>
     <script type="module">
       import {
         CHARACTERS,
@@ -949,6 +962,7 @@
           card.dataset.id = character.id;
           card.innerHTML = `${characterPortrait(character, 58)}
             <span class="cname">${character.name}</span>
+            <span class="ckorean">${character.koreanName}</span>
             <span class="crole">${character.role}</span>`;
           charRow.appendChild(card);
         }
@@ -975,7 +989,7 @@
             <div class="tagline">“${character.tagline}”</div>
           </div>
           <div class="detail-body">
-            <h3>${character.name}</h3>
+            <h3>${character.name} <small>${character.koreanName}</small></h3>
             <div class="detail-tags">
               <span class="tag">${character.role}</span>
               <span class="tag weapon">${character.weapon}</span>
@@ -1015,7 +1029,9 @@
 
       function openCharModal() {
         const mine = findMember(findRoom(roomId), me);
-        picked = mine ? mine.characterId : null;
+        picked = mine?.characterId
+          ? window.resolveBreachlineOperatorId(mine.characterId)
+          : null;
         charConfirm.disabled = !picked;
         if (picked) showDetail(picked);
         else showList();
