@@ -1,0 +1,315 @@
+/* Breachline UI — 공용 스타일
+   루트 index.html(게임 빌드)의 디자인 토큰을 그대로 따른다.
+   토큰 출처: index.html 의 :root 와 HUD 폴리시 스타일 블록. */
+
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    Segoe UI, sans-serif;
+  --ink: #edf4f6;
+  --muted: #8295a0;
+  --cyan: #6de6df;
+  --orange: #ffab63;
+  --red: #ff6b67;
+  --line: rgba(255, 255, 255, 0.11);
+  --panel: linear-gradient(140deg, #091923f5, #040b12f0);
+
+  /* 게임 HUD 가 쓰는 보조 색. 캐릭터·투척물 구분에 이어서 쓴다. */
+  --smoke: #9bb5ff; /* 연막 계열 */
+  --flash: #ffe06b; /* 섬광 텔레그래프 */
+  --enemy: #ff776f; /* 적 표식 */
+
+  /* 레이어 순서도 게임과 맞춘다 (게임: toast 18 · screen-card 20). */
+  --z-toast: 18;
+  --z-modal: 30;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 320px;
+  height: 100%;
+  background: #050b11;
+  color: var(--ink);
+}
+
+body {
+  display: flex;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 40%, #17252d 0, #071019 55%, #03070b);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- 타이포 ---------- */
+
+.eyebrow {
+  color: var(--cyan);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  font-weight: 800;
+}
+
+h1 {
+  margin: 8px 0 0;
+  font-size: clamp(52px, 10vw, 98px);
+  line-height: 0.9;
+  letter-spacing: -0.07em;
+  font-weight: 900;
+}
+
+h1 span {
+  color: var(--cyan);
+}
+
+.subtitle {
+  margin: 11px 0 0;
+  color: var(--muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.seed-line {
+  color: #526671;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+
+/* ---------- 패널 ---------- */
+
+.screen-card {
+  position: relative;
+  padding: 38px 42px 30px;
+  border: 1px solid rgba(109, 230, 223, 0.25);
+  background: var(--panel);
+  box-shadow: 0 24px 100px #0000008c, inset 0 1px #ffffff0a;
+  text-align: center;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.screen-card::before {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+}
+
+/* ---------- 버튼 ---------- */
+
+.primary-button {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  padding: 14px 23px;
+  color: #071117;
+  background: var(--cyan);
+  font-family: inherit;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: 0 8px 22px #6de6df38;
+  transition: 0.18s ease;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: #a5fff7;
+  transform: translateY(-1px);
+}
+
+.primary-button:disabled {
+  background: #24363f;
+  color: #5b7079;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.primary-button span {
+  margin-left: 9px;
+  font-size: 17px;
+}
+
+.ghost-button {
+  border: 1px solid var(--line);
+  padding: 11px 18px;
+  color: var(--ink);
+  background: #ffffff09;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.ghost-button:hover {
+  border-color: var(--cyan);
+  background: #6de6df1f;
+}
+
+/* ---------- 입력 ---------- */
+
+.field {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #ffffff09;
+  font-family: inherit;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  outline: none;
+  transition: 0.18s ease;
+}
+
+.field::placeholder {
+  color: #566a74;
+  letter-spacing: 0.1em;
+}
+
+.field:focus {
+  border-color: var(--cyan);
+  background: #6de6df14;
+  box-shadow: 0 0 0 1px #6de6df3d;
+}
+
+.field-error {
+  min-height: 14px;
+  color: var(--red);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-align: left;
+}
+
+/* ---------- 토스트 ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 48px;
+  transform: translate(-50%, 16px);
+  padding: 9px 15px;
+  color: #e9f8f8;
+  border-left: 2px solid var(--cyan);
+  background: #050e14cc;
+  opacity: 0;
+  transition: 0.2s ease;
+  pointer-events: none;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  z-index: var(--z-toast);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- 모달 ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #02060acc;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  z-index: var(--z-modal);
+}
+
+.modal {
+  width: min(420px, 100%);
+  text-align: left;
+}
+
+.modal h2 {
+  margin: 8px 0 20px;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+
+.form-row {
+  margin-bottom: 16px;
+}
+
+.form-row > label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  font-weight: 800;
+}
+
+.form-row > label .optional {
+  color: #566a74;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.form-row .field {
+  width: 100%;
+}
+
+/* 숫자 비밀번호 입력 */
+.field.pin {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.55em;
+  text-indent: 0.55em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.field.pin::placeholder {
+  color: #2f4149;
+  letter-spacing: 0.55em;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+/* ---------- 정원 선택 (세그먼트) ---------- */
+
+.segmented {
+  display: flex;
+  gap: 8px;
+}
+
+.segmented button {
+  flex: 1;
+  height: 40px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: #ffffff09;
+  font-family: inherit;
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.segmented button.selected {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: #6de6df1f;
+}

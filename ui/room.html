@@ -1,0 +1,1093 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07111c" />
+    <title>BREACHLINE — 방</title>
+    <link rel="stylesheet" href="ui.css" />
+    <style>
+      body {
+        overflow: hidden;
+      }
+
+      .room-layout {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        width: 100vw;
+        height: 100vh;
+        padding: 22px 30px 20px;
+        gap: 16px;
+      }
+
+      /* ---------- 상단 ---------- */
+
+      .room-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .room-head h2 {
+        margin: 6px 0 0;
+        font-size: 28px;
+        letter-spacing: -0.04em;
+      }
+
+      .room-meta {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.1em;
+      }
+
+      .room-meta b {
+        color: #b9cbd1;
+      }
+
+      /* 방 비밀번호 — 방 안에 있는 사람에게만 보인다 */
+      .room-pw {
+        margin-left: 10px;
+        padding: 2px 8px;
+        border: 1px solid var(--flash);
+        color: var(--flash);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+      }
+
+      /* ---------- 본문: 왼쪽 참여자 / 오른쪽 맵 ---------- */
+
+      .room-body {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        min-height: 0;
+      }
+
+      .col {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      .col-label {
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 9px;
+        letter-spacing: 0.15em;
+        font-weight: 800;
+      }
+
+      /* 팀 */
+
+      .teams {
+        display: grid;
+        grid-template-rows: 1fr 1fr;
+        gap: 12px;
+        min-height: 0;
+      }
+
+      .team {
+        display: flex;
+        flex-direction: column;
+        padding: 14px;
+        border: 1px solid var(--line);
+        background: #ffffff06;
+        min-height: 0;
+      }
+
+      .team.team-a {
+        border-left: 2px solid var(--cyan);
+      }
+
+      .team.team-b {
+        border-left: 2px solid var(--orange);
+      }
+
+      .team-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 11px;
+      }
+
+      .team-name {
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.2em;
+      }
+
+      .team-a .team-name {
+        color: var(--cyan);
+      }
+
+      .team-b .team-name {
+        color: var(--orange);
+      }
+
+      .team-join {
+        border: 1px solid var(--line);
+        padding: 4px 9px;
+        color: var(--muted);
+        background: transparent;
+        font-family: inherit;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        cursor: pointer;
+        transition: 0.18s ease;
+      }
+
+      .team-join:hover:not(:disabled) {
+        border-color: var(--cyan);
+        color: var(--cyan);
+      }
+
+      .team-join:disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+      }
+
+      .slots {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        flex: 1;
+        min-height: 0;
+      }
+
+      .slot {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        padding: 11px;
+        border: 1px solid var(--line);
+        background: #ffffff09;
+        min-width: 0;
+      }
+
+      .slot.empty {
+        border-style: dashed;
+        border-color: #22343d;
+        background: transparent;
+        justify-content: center;
+        color: #43585f;
+        font-size: 10px;
+        letter-spacing: 0.14em;
+      }
+
+      .slot.me {
+        border-color: var(--cyan);
+        background: #6de6df14;
+      }
+
+      .slot-portrait {
+        flex: none;
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        background: #050e14;
+      }
+
+      .slot-portrait.none {
+        color: #3b4f57;
+        font-size: 18px;
+      }
+
+      .slot-info {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .slot-name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .host-tag {
+        flex: none;
+        padding: 1px 5px;
+        color: #071117;
+        background: var(--flash);
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+      }
+
+      .slot-char {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .slot-ready {
+        flex: none;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+      }
+
+      .slot-ready.on {
+        color: #55f0b0;
+      }
+
+      .slot-ready.off {
+        color: #4e6872;
+      }
+
+      /* 맵 */
+
+      .map-panel {
+        display: flex;
+        flex-direction: column;
+        padding: 14px;
+        border: 1px solid var(--line);
+        background: #ffffff06;
+        min-height: 0;
+      }
+
+      .map-preview {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        min-height: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        background: #030a0f;
+      }
+
+      .map-preview svg {
+        max-height: 100%;
+      }
+
+      .map-info {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 14px;
+        margin-top: 12px;
+      }
+
+      .map-name {
+        font-size: 18px;
+        font-weight: 900;
+        letter-spacing: 0.06em;
+      }
+
+      .map-sub {
+        margin-top: 4px;
+        color: var(--cyan);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+      }
+
+      .map-desc {
+        margin: 10px 0 0;
+        color: #a9bcc2;
+        font-size: 11px;
+        line-height: 1.65;
+      }
+
+      .map-panel .ghost-button {
+        margin-top: 12px;
+        width: 100%;
+      }
+
+      /* ---------- 하단 액션 (우측 하단) ---------- */
+
+      .room-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+      }
+
+      .foot-hint {
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+      }
+
+      .foot-actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      .primary-button.ready-on {
+        background: #55f0b0;
+        box-shadow: 0 8px 22px #55f0b038;
+      }
+
+      /* ---------- 캐릭터 선택 팝업 ---------- */
+
+      .char-modal {
+        width: min(960px, 100%);
+        text-align: left;
+      }
+
+      .char-modal-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+
+      .char-modal-head h2 {
+        margin: 6px 0 0;
+      }
+
+      /* 일렬 나열 */
+
+      .char-row {
+        display: flex;
+        gap: 10px;
+        overflow-x: auto;
+        padding-bottom: 8px;
+      }
+
+      .char-card {
+        flex: 0 0 92px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 7px;
+        padding: 12px 6px;
+        border: 1px solid var(--line);
+        color: var(--ink);
+        background: #ffffff09;
+        font-family: inherit;
+        cursor: pointer;
+        transition: 0.18s ease;
+      }
+
+      .char-card:hover,
+      .char-card:focus-visible {
+        border-color: var(--accent, var(--cyan));
+        background: #ffffff14;
+        transform: translateY(-2px);
+        outline: none;
+      }
+
+      .char-card.picked {
+        border-color: var(--accent, var(--cyan));
+        background: color-mix(in srgb, var(--accent, var(--cyan)) 14%, transparent);
+      }
+
+      .char-card .cname {
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+      }
+
+      .char-card .crole {
+        color: var(--muted);
+        font-size: 9px;
+        letter-spacing: 0.1em;
+      }
+
+      /* 상세: 왼쪽 이미지 / 오른쪽 설명 */
+
+      .char-detail {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        gap: 26px;
+        align-items: start;
+        min-height: 260px;
+      }
+
+      .detail-portrait {
+        display: grid;
+        place-items: center;
+        padding: 18px;
+        border: 1px solid var(--line);
+        background: #050e14;
+      }
+
+      .detail-portrait .tagline {
+        margin-top: 12px;
+        color: var(--accent, var(--cyan));
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-align: center;
+      }
+
+      .detail-body h3 {
+        margin: 0;
+        font-size: 34px;
+        letter-spacing: -0.04em;
+        color: var(--accent, var(--cyan));
+      }
+
+      .detail-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        margin-top: 10px;
+      }
+
+      .tag {
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        color: #b9cbd1;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+
+      .tag.weapon {
+        border-color: var(--accent, var(--cyan));
+        color: var(--accent, var(--cyan));
+      }
+
+      .tag.built {
+        border-color: #55f0b0;
+        color: #55f0b0;
+      }
+
+      .detail-desc {
+        margin: 16px 0 0;
+        color: #c0d0d4;
+        font-size: 13px;
+        line-height: 1.75;
+      }
+
+      .detail-stats {
+        display: grid;
+        gap: 8px;
+        margin-top: 18px;
+        max-width: 320px;
+      }
+
+      .stat-row {
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+      }
+
+      .pips {
+        display: flex;
+        gap: 4px;
+      }
+
+      .pips i {
+        flex: 1;
+        height: 5px;
+        background: #ffffff14;
+      }
+
+      .pips i.on {
+        background: var(--accent, var(--cyan));
+      }
+
+      .detail-traits {
+        margin: 16px 0 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 7px;
+      }
+
+      .detail-traits li {
+        display: flex;
+        gap: 8px;
+        color: #a9bcc2;
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      .detail-traits li::before {
+        content: "▸";
+        color: var(--accent, var(--cyan));
+      }
+
+      /* ---------- 맵 선택 팝업 ---------- */
+
+      .map-modal {
+        width: min(760px, 100%);
+        text-align: left;
+      }
+
+      .map-choices {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .map-choice {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        color: var(--ink);
+        background: #ffffff09;
+        font-family: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition: 0.18s ease;
+      }
+
+      .map-choice:hover,
+      .map-choice.picked {
+        border-color: var(--cyan);
+        background: #6de6df1f;
+      }
+
+      .map-choice .mc-name {
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+      }
+
+      .map-choice .mc-sub {
+        color: var(--muted);
+        font-size: 9px;
+        letter-spacing: 0.1em;
+      }
+
+      @media (max-width: 900px) {
+        .room-layout {
+          padding: 16px;
+        }
+        .room-body {
+          grid-template-columns: 1fr;
+          overflow-y: auto;
+        }
+        .char-detail {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        .map-choices {
+          grid-template-columns: 1fr;
+        }
+        .room-foot {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .foot-hint {
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="room-layout">
+      <!-- 상단 -->
+      <header class="room-head">
+        <div>
+          <div class="eyebrow">ROOM // BRIEFING</div>
+          <h2 id="room-title">—</h2>
+          <div class="room-meta">
+            방장 <b id="room-host">—</b> · <b id="room-count">0/0</b> · 내 닉네임
+            <b id="my-name">—</b><span id="room-pw" class="room-pw hidden"></span>
+          </div>
+        </div>
+        <button id="leave" class="ghost-button" type="button">방 나가기</button>
+      </header>
+
+      <!-- 본문 -->
+      <div class="room-body">
+        <!-- 왼쪽: 참여자 -->
+        <section class="col">
+          <div class="col-label">PLAYERS</div>
+          <div class="teams">
+            <div class="team team-a">
+              <div class="team-head">
+                <span class="team-name">A TEAM</span>
+                <button class="team-join" type="button" data-team="A">이 팀으로</button>
+              </div>
+              <div class="slots" id="slots-a"></div>
+            </div>
+            <div class="team team-b">
+              <div class="team-head">
+                <span class="team-name">B TEAM</span>
+                <button class="team-join" type="button" data-team="B">이 팀으로</button>
+              </div>
+              <div class="slots" id="slots-b"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 오른쪽: 맵 -->
+        <section class="col">
+          <div class="col-label">MAP</div>
+          <div class="map-panel">
+            <div class="map-preview" id="map-preview"></div>
+            <div class="map-info">
+              <div>
+                <div class="map-name" id="map-name">—</div>
+                <div class="map-sub" id="map-sub">—</div>
+              </div>
+            </div>
+            <p class="map-desc" id="map-desc"></p>
+            <button id="open-map" class="ghost-button" type="button">맵 선택</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- 하단: 우측에 캐릭터 선택 / 준비·시작 -->
+      <footer class="room-foot">
+        <div class="foot-hint" id="foot-hint"></div>
+        <div class="foot-actions">
+          <!-- 테스트용: 서버 연동 시 제거 -->
+          <button id="add-test" class="ghost-button" type="button" title="빈 자리에 준비 완료된 더미 참여자를 추가합니다">
+            + 테스트 참여자
+          </button>
+          <button id="open-char" class="ghost-button" type="button">캐릭터 선택</button>
+          <button id="action-button" class="primary-button" type="button">준비</button>
+        </div>
+      </footer>
+    </div>
+
+    <!-- 캐릭터 선택 팝업 -->
+    <div id="char-modal" class="modal-backdrop hidden">
+      <section class="screen-card char-modal">
+        <div class="char-modal-head">
+          <div>
+            <div class="eyebrow">SELECT OPERATOR</div>
+            <h2>캐릭터 선택</h2>
+          </div>
+          <button id="char-back" class="ghost-button hidden" type="button">← 목록</button>
+        </div>
+
+        <div id="char-row" class="char-row"></div>
+        <div id="char-detail" class="char-detail hidden"></div>
+
+        <div class="modal-actions">
+          <button id="char-cancel" class="ghost-button" type="button">취소</button>
+          <button id="char-confirm" class="primary-button" type="button" disabled>
+            선택 완료 <span>↗</span>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 맵 선택 팝업 -->
+    <div id="map-modal" class="modal-backdrop hidden">
+      <section class="screen-card map-modal">
+        <div class="eyebrow">SELECT MAP</div>
+        <h2>맵 선택</h2>
+        <div id="map-choices" class="map-choices"></div>
+        <div class="modal-actions">
+          <button id="map-cancel" class="ghost-button" type="button">닫기</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <script type="module">
+      import {
+        CHARACTERS,
+        MAPS,
+        characterPortrait,
+        findCharacter,
+        findMap,
+        mapPreview,
+      } from "./data.js";
+      import {
+        TEAMS,
+        addTestMember,
+        allGuestsReady,
+        findMember,
+        findRoom,
+        getJoinedRoomId,
+        hasPassword,
+        isHost,
+        joinRoom,
+        leaveRoom,
+        playerCount,
+        requireNickname,
+        setCharacter,
+        setMap,
+        setReady,
+        startGame,
+        switchTeam,
+        toast,
+      } from "./store.js";
+
+      const me = requireNickname();
+      if (!me) throw new Error("no nickname");
+
+      const roomId = new URLSearchParams(location.search).get("id") || getJoinedRoomId();
+      if (!roomId || !findRoom(roomId)) {
+        location.replace("rooms.html");
+        throw new Error("no room");
+      }
+      // 주소로 바로 들어온 경우에도 참여 처리를 해 둔다.
+      // 잠긴 방은 방 목록에서 비밀번호를 확인하고 들어와야 한다.
+      const entering = findRoom(roomId);
+      if (hasPassword(entering) && !findMember(entering, me)) {
+        alert("비밀번호가 있는 방입니다. 방 목록에서 참여해 주세요.");
+        location.replace("rooms.html");
+        throw new Error("locked room");
+      }
+      if (!joinRoom(roomId, me)) {
+        alert("정원이 가득 찬 방입니다.");
+        location.replace("rooms.html");
+        throw new Error("room full");
+      }
+
+      const el = (id) => document.getElementById(id);
+      const perTeam = () => Math.floor(findRoom(roomId).capacity / TEAMS.length);
+
+      /* ---------------- 렌더 ---------------- */
+
+      function renderSlots(room) {
+        for (const team of TEAMS) {
+          const box = el(`slots-${team.toLowerCase()}`);
+          box.innerHTML = "";
+          const members = room.members.filter((m) => m.team === team);
+
+          for (let i = 0; i < perTeam(); i += 1) {
+            const m = members[i];
+            const slot = document.createElement("div");
+
+            if (!m) {
+              slot.className = "slot empty";
+              slot.textContent = "EMPTY";
+              box.appendChild(slot);
+              continue;
+            }
+
+            slot.className = m.name === me ? "slot me" : "slot";
+
+            const portrait = document.createElement("div");
+            const character = m.characterId ? findCharacter(m.characterId) : null;
+            if (character) {
+              portrait.className = "slot-portrait";
+              portrait.innerHTML = characterPortrait(character, 38);
+            } else {
+              portrait.className = "slot-portrait none";
+              portrait.textContent = "?";
+            }
+
+            const info = document.createElement("div");
+            info.className = "slot-info";
+            const nameRow = document.createElement("div");
+            nameRow.className = "slot-name";
+            const nameText = document.createElement("span");
+            nameText.textContent = m.name;
+            nameRow.appendChild(nameText);
+            if (isHost(room, m.name)) {
+              const tag = document.createElement("span");
+              tag.className = "host-tag";
+              tag.textContent = "방장";
+              nameRow.appendChild(tag);
+            }
+            const charLine = document.createElement("div");
+            charLine.className = "slot-char";
+            charLine.textContent = character
+              ? `${character.name} · ${character.role}`
+              : "캐릭터 미선택";
+            info.append(nameRow, charLine);
+
+            const ready = document.createElement("div");
+            // 방장은 준비 대상이 아니다.
+            if (isHost(room, m.name)) {
+              ready.className = "slot-ready off";
+              ready.textContent = "HOST";
+            } else {
+              ready.className = m.ready ? "slot-ready on" : "slot-ready off";
+              ready.textContent = m.ready ? "READY" : "WAIT";
+            }
+
+            slot.append(portrait, info, ready);
+            box.appendChild(slot);
+          }
+        }
+
+        for (const button of document.querySelectorAll(".team-join")) {
+          const team = button.dataset.team;
+          const mine = findMember(room, me);
+          const full = room.members.filter((m) => m.team === team).length >= perTeam();
+          button.disabled = !mine || mine.team === team || full;
+        }
+      }
+
+      function renderMap(room) {
+        const map = findMap(room.mapId);
+        el("map-preview").innerHTML = mapPreview(map);
+        el("map-name").textContent = map.name;
+        el("map-sub").textContent = map.subtitle;
+        el("map-desc").textContent = map.desc;
+        // 맵은 방장만 바꾼다.
+        el("open-map").disabled = !isHost(room, me);
+        el("open-map").textContent = isHost(room, me) ? "맵 선택" : "맵 선택 (방장만 가능)";
+      }
+
+      function renderFooter(room) {
+        const mine = findMember(room, me);
+        const host = isHost(room, me);
+        const action = el("action-button");
+        const hint = el("foot-hint");
+
+        if (host) {
+          const ready = allGuestsReady(room);
+          action.textContent = "게임 시작";
+          action.classList.remove("ready-on");
+          // 방장 제외 전원이 준비해야 시작할 수 있다.
+          action.disabled = !ready;
+          hint.textContent = ready
+            ? "전원 준비 완료 — 시작할 수 있습니다."
+            : room.members.length < 2
+              ? "참여자를 기다리는 중입니다."
+              : "참여자가 모두 준비하면 시작할 수 있습니다.";
+        } else {
+          const on = Boolean(mine && mine.ready);
+          action.textContent = on ? "준비 완료" : "준비";
+          action.classList.toggle("ready-on", on);
+          action.disabled = false;
+          hint.textContent = on
+            ? "방장이 시작하기를 기다리는 중입니다."
+            : "준비를 누르면 방장이 게임을 시작할 수 있습니다.";
+        }
+      }
+
+      function render() {
+        const room = findRoom(roomId);
+        if (!room) {
+          location.replace("rooms.html");
+          return;
+        }
+        el("room-title").textContent = room.title;
+        el("room-host").textContent = room.host;
+        el("room-count").textContent = `${playerCount(room)}/${room.capacity}`;
+        el("my-name").textContent = me;
+        const pw = el("room-pw");
+        pw.classList.toggle("hidden", !hasPassword(room));
+        if (hasPassword(room)) pw.textContent = `🔒 ${room.password}`;
+        renderSlots(room);
+        renderMap(room);
+        renderFooter(room);
+      }
+
+      /* ---------------- 팀 이동 / 나가기 ---------------- */
+
+      for (const button of document.querySelectorAll(".team-join")) {
+        button.addEventListener("click", () => {
+          if (switchTeam(roomId, me, button.dataset.team)) {
+            render();
+          } else {
+            toast("그 팀은 자리가 없습니다.");
+          }
+        });
+      }
+
+      // 테스트용: 서버 연동 시 이 블록과 버튼을 함께 지운다.
+      el("add-test").addEventListener("click", () => {
+        const pool = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
+        const added = addTestMember(roomId, pool.id);
+        if (!added) {
+          toast("빈 자리가 없습니다.");
+          return;
+        }
+        render();
+        toast(`${added.name} 이(가) 참여했습니다. (테스트)`);
+      });
+
+      el("leave").addEventListener("click", () => {
+        leaveRoom(roomId, me);
+        location.href = "rooms.html";
+      });
+
+      /* ---------------- 준비 / 시작 ---------------- */
+
+      el("action-button").addEventListener("click", () => {
+        const room = findRoom(roomId);
+        if (isHost(room, me)) {
+          if (!allGuestsReady(room)) return;
+          toast("작전을 시작합니다.");
+          setTimeout(startGame, 600);
+          return;
+        }
+        const mine = findMember(room, me);
+        setReady(roomId, me, !mine.ready);
+        render();
+      });
+
+      /* ---------------- 캐릭터 선택 팝업 ---------------- */
+
+      const charModal = el("char-modal");
+      const charRow = el("char-row");
+      const charDetail = el("char-detail");
+      const charBack = el("char-back");
+      const charConfirm = el("char-confirm");
+      let picked = null;
+
+      function renderRow() {
+        charRow.innerHTML = "";
+        for (const character of CHARACTERS) {
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = picked === character.id ? "char-card picked" : "char-card";
+          card.style.setProperty("--accent", character.color);
+          card.dataset.id = character.id;
+          card.innerHTML = `${characterPortrait(character, 58)}
+            <span class="cname">${character.name}</span>
+            <span class="crole">${character.role}</span>`;
+          charRow.appendChild(card);
+        }
+      }
+
+      function renderDetail(character) {
+        charDetail.style.setProperty("--accent", character.color);
+        const stats = Object.entries(character.stats)
+          .map(
+            ([label, value]) => `
+            <div class="stat-row">
+              <span>${label}</span>
+              <span class="pips">${Array.from(
+                { length: 5 },
+                (_, i) => `<i class="${i < value ? "on" : ""}"></i>`
+              ).join("")}</span>
+            </div>`
+          )
+          .join("");
+
+        charDetail.innerHTML = `
+          <div class="detail-portrait">
+            ${characterPortrait(character, 150)}
+            <div class="tagline">“${character.tagline}”</div>
+          </div>
+          <div class="detail-body">
+            <h3>${character.name}</h3>
+            <div class="detail-tags">
+              <span class="tag">${character.role}</span>
+              <span class="tag weapon">${character.weapon}</span>
+              ${character.implemented ? '<span class="tag built">게임 구현 완료</span>' : ""}
+            </div>
+            <p class="detail-desc">${character.desc}</p>
+            <div class="detail-stats">${stats}</div>
+            <ul class="detail-traits">
+              ${character.traits.map((t) => `<li>${t}</li>`).join("")}
+            </ul>
+          </div>`;
+      }
+
+      /* 캐릭터를 고르면 목록은 감추고 왼쪽 이미지 · 오른쪽 설명만 남는다. */
+      function showDetail(id) {
+        picked = id;
+        renderDetail(findCharacter(id));
+        charRow.classList.add("hidden");
+        charDetail.classList.remove("hidden");
+        charBack.classList.remove("hidden");
+        charConfirm.disabled = false;
+      }
+
+      function showList() {
+        renderRow();
+        charRow.classList.remove("hidden");
+        charDetail.classList.add("hidden");
+        charBack.classList.add("hidden");
+      }
+
+      charRow.addEventListener("click", (event) => {
+        const card = event.target.closest(".char-card");
+        if (card) showDetail(card.dataset.id);
+      });
+
+      charBack.addEventListener("click", showList);
+
+      function openCharModal() {
+        const mine = findMember(findRoom(roomId), me);
+        picked = mine ? mine.characterId : null;
+        charConfirm.disabled = !picked;
+        if (picked) showDetail(picked);
+        else showList();
+        charModal.classList.remove("hidden");
+      }
+
+      function closeCharModal() {
+        charModal.classList.add("hidden");
+      }
+
+      el("open-char").addEventListener("click", openCharModal);
+      el("char-cancel").addEventListener("click", closeCharModal);
+
+      charConfirm.addEventListener("click", () => {
+        if (!picked) return;
+        setCharacter(roomId, me, picked);
+        closeCharModal();
+        render();
+        toast(`${findCharacter(picked).name} 을(를) 선택했습니다.`);
+      });
+
+      /* ---------------- 맵 선택 팝업 ---------------- */
+
+      const mapModal = el("map-modal");
+
+      function renderMapChoices() {
+        const room = findRoom(roomId);
+        const box = el("map-choices");
+        box.innerHTML = "";
+        for (const map of MAPS) {
+          const choice = document.createElement("button");
+          choice.type = "button";
+          choice.className = room.mapId === map.id ? "map-choice picked" : "map-choice";
+          choice.dataset.id = map.id;
+          choice.innerHTML = `${mapPreview(map, 220)}
+            <span class="mc-name">${map.name}</span>
+            <span class="mc-sub">${map.subtitle}</span>`;
+          box.appendChild(choice);
+        }
+      }
+
+      el("open-map").addEventListener("click", () => {
+        if (!isHost(findRoom(roomId), me)) return;
+        renderMapChoices();
+        mapModal.classList.remove("hidden");
+      });
+
+      el("map-choices").addEventListener("click", (event) => {
+        const choice = event.target.closest(".map-choice");
+        if (!choice) return;
+        setMap(roomId, choice.dataset.id);
+        mapModal.classList.add("hidden");
+        render();
+        toast(`맵을 ${findMap(choice.dataset.id).name} 으로 바꿨습니다.`);
+      });
+
+      el("map-cancel").addEventListener("click", () => mapModal.classList.add("hidden"));
+
+      /* 배경 클릭 · Esc 로 팝업 닫기 */
+      for (const modal of [charModal, mapModal]) {
+        modal.addEventListener("click", (event) => {
+          if (event.target === modal) modal.classList.add("hidden");
+        });
+      }
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        charModal.classList.add("hidden");
+        mapModal.classList.add("hidden");
+      });
+
+      render();
+    </script>
+  </body>
+</html>

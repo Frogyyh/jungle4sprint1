@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07111c" />
+    <title>BREACHLINE — 시작</title>
+    <link rel="stylesheet" href="ui.css" />
+    <style>
+      body {
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .start-card {
+        width: min(620px, 100%);
+      }
+
+      .nickname-row {
+        display: flex;
+        gap: 10px;
+        margin: 34px 0 6px;
+      }
+
+      .nickname-row .primary-button {
+        flex: none;
+        padding: 0 26px;
+        height: 46px;
+      }
+
+      .hint {
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.1em;
+      }
+
+      .divider {
+        height: 1px;
+        margin: 26px 0 18px;
+        background: linear-gradient(90deg, transparent, var(--line), transparent);
+      }
+
+      @media (max-width: 560px) {
+        .screen-card {
+          padding: 30px 18px 24px;
+        }
+        .nickname-row {
+          flex-direction: column;
+        }
+        .nickname-row .primary-button {
+          height: 46px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="screen-card start-card">
+      <div class="eyebrow">OPERATION // NIGHTFALL</div>
+      <h1>BREACH<span>LINE</span></h1>
+      <p class="subtitle">2 vs 2 tactical shooter</p>
+
+      <div class="divider"></div>
+
+      <form id="nickname-form" novalidate>
+        <div class="nickname-row">
+          <input
+            id="nickname"
+            class="field"
+            type="text"
+            placeholder="닉네임을 입력하세요"
+            maxlength="12"
+            autocomplete="off"
+            autofocus
+            aria-label="닉네임"
+          />
+          <button id="select-button" class="primary-button" type="submit">
+            선택 <span>↗</span>
+          </button>
+        </div>
+        <p id="nickname-error" class="field-error" role="alert"></p>
+      </form>
+
+      <p class="hint">닉네임은 2~12자 · 한글 · 영문 · 숫자 · 밑줄(_)</p>
+      <div class="divider"></div>
+      <div class="seed-line">LOCAL SIMULATION · 10 OPERATORS · 2 vs 2</div>
+    </main>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <script type="module">
+      import { getNickname, setNickname, validateNickname } from "./store.js";
+
+      const form = document.getElementById("nickname-form");
+      const input = document.getElementById("nickname");
+      const error = document.getElementById("nickname-error");
+
+      // 뒤로 돌아온 경우 이전 닉네임을 되살린다.
+      input.value = getNickname();
+
+      input.addEventListener("input", () => {
+        error.textContent = "";
+      });
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const result = validateNickname(input.value);
+        if (!result.ok) {
+          error.textContent = result.message;
+          input.focus();
+          return;
+        }
+        setNickname(result.value);
+        location.href = "rooms.html";
+      });
+    </script>
+  </body>
+</html>
