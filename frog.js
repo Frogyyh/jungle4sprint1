@@ -8,17 +8,17 @@
 
     const FROG = {
       id: "frog",
-      name: "FROG TONGUE",
-      damage: 30,
-      pellets: 1,
-      rpm: 75,
-      spreadDeg: 0,
-      magSize: 1,
-      reserve: 0,
-      reload: 0,
-      range: 650,
-      projectileSpeed: 950,
-      color: 0xff6b99,
+      name: "FROG BUBBLE SPRAYER",
+      damage: 4,
+      pellets: 4,
+      rpm: 300,
+      spreadDeg: 12,
+      magSize: 30,
+      reserve: 150,
+      reload: 1.4,
+      range: 900,
+      projectileSpeed: 1200,
+      color: 0x7eeeff,
     };
     const vec = (x = 0, y = 0) => new game.player.pos.constructor(x, y);
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -26,6 +26,7 @@
     let tongue = null;
     let tongueReadyAt = 0;
     let canLaunchTongue = true;
+    let spaceHeld = false;
 
     const rayWall = (origin, direction, maxDistance, wall) => {
       const minX = wall.x - wall.w / 2;
@@ -51,20 +52,6 @@
         far = Math.min(far, Math.max(a, b));
       }
       return far >= near && near <= maxDistance && far >= 0 ? Math.max(0, near) : undefined;
-    };
-
-    const rayActor = (origin, direction, maxDistance, actor) => {
-      const dx = actor.pos.x - origin.x;
-      const dy = actor.pos.y - origin.y;
-      const along = dx * direction.x + dy * direction.y;
-      const radius = actor.radius + 8;
-      if (along < 0 || along - radius > maxDistance) return undefined;
-      const sideSq = dx * dx + dy * dy - along * along;
-      if (sideSq > radius * radius) return undefined;
-      const halfChord = Math.sqrt(radius * radius - sideSq);
-      const entry = along - halfChord;
-      const hit = entry >= 0 ? entry : along + halfChord;
-      return hit <= maxDistance ? hit : undefined;
     };
 
     const disposeTongue = () => {
@@ -122,9 +109,9 @@
         phase: "extending",
         direction,
         length: game.player.radius,
-        maxLength: FROG.range,
-        outSpeed: 950,
-        returnSpeed: 1200,
+        maxLength: 700,
+        outSpeed: 3600,
+        returnSpeed: 4800,
         tipPos: game.player.pos.clone().add(direction.clone().multiplyScalar(game.player.radius)),
         anchor: null,
         angularVelocity: 0,
@@ -132,8 +119,7 @@
         strip,
         tip,
       };
-      game.player.shots++;
-      game.showToast("TONGUE OUT — RELEASE TO RETRACT");
+      game.showToast("TONGUE — WALLS ONLY");
       renderTongue();
     };
 
@@ -141,21 +127,17 @@
       if (!tongue || tongue.phase === "retracting") return;
       tongue.phase = "retracting";
       tongue.anchor = null;
-      tongueReadyAt = game.now + 0.25;
-      game.showToast("TONGUE RETURNING");
+      tongueReadyAt = game.now + 0.08;
     };
 
-    const swing = (dt, input) => {
+    const swing = (dt) => {
       const radial = game.player.pos.clone().sub(tongue.anchor);
       if (radial.lengthSq() < 1) return;
       radial.setLength(tongue.length);
-      const tangent = vec(-radial.y, radial.x).normalize();
-      let drive = input.x * tangent.x + input.y * tangent.y;
-      if (game.keys.has("ArrowRight")) drive += 1;
-      if (game.keys.has("ArrowLeft")) drive -= 1;
-      tongue.angularVelocity += clamp(drive, -1, 1) * 4.5 * dt;
-      tongue.angularVelocity *= Math.pow(0.86, dt);
-      tongue.angularVelocity = clamp(tongue.angularVelocity, -2.8, 2.8);
+      const drive = (game.keys.has("KeyD") ? 1 : 0) - (game.keys.has("KeyA") ? 1 : 0);
+      tongue.angularVelocity += drive * 11 * dt;
+      tongue.angularVelocity *= Math.pow(drive === 0 ? 0.22 : 0.82, dt);
+      tongue.angularVelocity = clamp(tongue.angularVelocity, -4.4, 4.4);
       const angle = tongue.angularVelocity * dt;
       const cos = Math.cos(angle);
       const sin = Math.sin(angle);
@@ -173,9 +155,9 @@
       tongue.tipPos.copy(tongue.anchor);
     };
 
-    const updateTongue = (dt, input) => {
+    const updateTongue = (dt) => {
       if (!tongue) return;
-      if (!game.mouse.down && tongue.phase !== "retracting") releaseTongue();
+      if (!spaceHeld && tongue.phase !== "retracting") releaseTongue();
 
       if (tongue.phase === "extending") {
         const origin = game.player.pos;
@@ -183,43 +165,27 @@
         const nextLength = Math.min(tongue.maxLength, previousLength + tongue.outSpeed * dt);
         let hitDistance = nextLength;
         let wallHit = null;
-        let enemyHit = null;
 
         for (const wall of game.walls) {
           const distance = rayWall(origin, tongue.direction, nextLength, wall);
           if (distance !== undefined && distance >= previousLength - 10 && distance < hitDistance) {
             hitDistance = distance;
             wallHit = wall;
-            enemyHit = null;
-          }
-        }
-        for (const bot of game.bots) {
-          if (!bot.alive) continue;
-          const distance = rayActor(origin, tongue.direction, nextLength, bot);
-          if (distance !== undefined && distance >= previousLength - 10 && distance < hitDistance) {
-            hitDistance = distance;
-            enemyHit = bot;
-            wallHit = null;
           }
         }
 
         tongue.length = hitDistance;
         tongue.tipPos.copy(origin).add(tongue.direction.clone().multiplyScalar(hitDistance));
-        if (enemyHit) {
-          enemyHit.slowUntil = game.now + 3;
-          game.player.hits++;
-          game.damageActor(game.player, enemyHit, FROG.damage);
-          game.player.hp = Math.min(100, game.player.hp + 50);
-          game.showToast("TONGUE HIT — +50 HP / SLOWED");
-          releaseTongue();
-        } else if (wallHit) {
+        if (wallHit) {
           tongue.phase = "attached";
           tongue.anchor = tongue.tipPos.clone();
           tongue.angularVelocity = 0;
-          game.showToast("WALL GRABBED — WASD / ARROWS TO SWING");
+          game.showToast("WALL GRABBED — A LEFT / D RIGHT");
+        } else if (tongue.length >= tongue.maxLength) {
+          releaseTongue();
         }
       } else if (tongue.phase === "attached") {
-        swing(dt, input);
+        swing(dt);
       } else if (tongue.phase === "retracting") {
         const toPlayer = game.player.pos.clone().sub(tongue.tipPos);
         const distance = toPlayer.length();
@@ -236,7 +202,7 @@
     const applyAppearance = (frog) => {
       game.player.body.material.color.setHex(frog ? 0x39d36f : 0x6de6df);
       game.player.ring.material.color.setHex(frog ? 0xa4ff8b : 0xc2fff7);
-      if (game.player.mesh.children[2]) game.player.mesh.children[2].visible = !frog;
+      for (const child of game.player.mesh.children.slice(2)) child.visible = !frog;
     };
 
     const originalStartRound = game.startRound.bind(game);
@@ -244,39 +210,65 @@
       const wantsFrog = this.selectedWeapon === "frog";
       if (wantsFrog) this.selectedWeapon = "rifle";
       disposeTongue();
+      tongueReadyAt = 0;
       canLaunchTongue = true;
+      spaceHeld = false;
       originalStartRound();
       if (wantsFrog) {
         this.selectedWeapon = "frog";
         this.player.weapon = FROG;
-        this.player.ammo = 1;
-        this.player.reserve = 0;
+        this.player.ammo = FROG.magSize;
+        this.player.reserve = FROG.reserve;
         applyAppearance(true);
         this.renderUi();
-        this.showToast("FROG READY — HOLD LEFT CLICK");
+        this.showToast("FROG READY — LMB WATER / SPACE TONGUE");
       } else {
         applyAppearance(false);
       }
     };
 
+    const originalSpawnProjectile = game.spawnProjectile.bind(game);
+    game.spawnProjectile = function spawnSoapBubble(source, position, direction, weapon) {
+      originalSpawnProjectile(source, position, direction, weapon);
+      if (source !== this.player || !isFrog()) return;
+
+      const projectile = this.projectiles[this.projectiles.length - 1];
+      if (!projectile) return;
+      const oldGeometry = projectile.mesh.geometry;
+      projectile.mesh.geometry = this.player.body.geometry.clone();
+      oldGeometry.dispose();
+      const bubbleColors = [0x7eeeff, 0xa7f4ff, 0x88d8ff, 0xd1fbff];
+      projectile.mesh.material.color.setHex(bubbleColors[Math.floor(Math.random() * bubbleColors.length)]);
+      projectile.mesh.material.transparent = true;
+      projectile.mesh.material.opacity = 0.48 + Math.random() * 0.22;
+      projectile.mesh.material.depthWrite = false;
+      projectile.mesh.rotation.z = 0;
+      projectile.mesh.scale.setScalar(0.24 + Math.random() * 0.22);
+      projectile.velocity.multiplyScalar(0.88 + Math.random() * 0.24);
+      projectile.remaining *= 0.92 + Math.random() * 0.16;
+      projectile.isSoapBubble = true;
+    };
+
     const originalFire = game.fire.bind(game);
-    game.fire = function fireOrTongue(actor, angle) {
-      if (actor === this.player && isFrog()) {
-        beginTongue();
+    game.fire = function fireWaterGun(actor, angle) {
+      if (actor !== this.player || !isFrog()) {
+        originalFire(actor, angle);
         return;
       }
-      originalFire(actor, angle);
+      const shakeBefore = this.cameraShake || 0;
+      const alertBots = this.alertBotsToGunshot;
+      this.alertBotsToGunshot = () => {};
+      try {
+        originalFire(actor, angle);
+      } finally {
+        this.alertBotsToGunshot = alertBots;
+      }
+      this.cameraShake = Math.min(shakeBefore + 0.55, this.cameraShake || 0.55);
+      document.querySelector("#muzzle-flash")?.classList.remove("active");
     };
 
     const originalUpdatePlayer = game.updatePlayer.bind(game);
     game.updatePlayer = function updateFrogPlayer(dt) {
-      const input = vec(
-        (this.keys.has("KeyD") || this.keys.has("ArrowRight") ? 1 : 0)
-          - (this.keys.has("KeyA") || this.keys.has("ArrowLeft") ? 1 : 0),
-        (this.keys.has("KeyW") || this.keys.has("ArrowUp") ? 1 : 0)
-          - (this.keys.has("KeyS") || this.keys.has("ArrowDown") ? 1 : 0),
-      );
-      if (input.lengthSq() > 0) input.normalize();
       if (isFrog() && tongue && tongue.phase === "attached") {
         const heldKeys = this.keys;
         this.keys = new Set();
@@ -285,7 +277,16 @@
       } else {
         originalUpdatePlayer(dt);
       }
-      if (isFrog()) updateTongue(dt, input);
+      if (isFrog()) updateTongue(dt);
+    };
+
+    const originalDamageActor = game.damageActor.bind(game);
+    game.damageActor = function damageWithWaterSlow(source, target, amount) {
+      const hpBefore = target.hp;
+      originalDamageActor(source, target, amount);
+      if (source === this.player && isFrog() && target.hp < hpBefore) {
+        target.slowUntil = this.now + 2.5;
+      }
     };
 
     const originalMoveBot = game.moveBot.bind(game);
@@ -307,27 +308,34 @@
       originalRenderUi();
       this.canvas.dataset.playerKind = isFrog() ? "frog" : "soldier";
       if (!isFrog()) return;
-      document.querySelector("#weapon-name").textContent = "FROG TONGUE";
-      document.querySelector("#ammo").textContent = "↔";
-      document.querySelector("#reserve").textContent = tongue ? tongue.phase.toUpperCase() : "READY";
+      applyAppearance(true);
+      document.querySelector("#weapon-name").textContent = "FROG BUBBLE SPRAYER";
       document.querySelector("#reload-hint").textContent = tongue && tongue.phase === "attached"
-        ? "WASD / ARROWS: SWING · RELEASE: RETURN"
-        : "HOLD LEFT CLICK: EXTEND · RELEASE: RETURN";
-      document.querySelector("#reload-progress").classList.remove("active");
+        ? "A: LEFT SWING · D: RIGHT SWING · RELEASE SPACE"
+        : "LMB: WATER GUN · SPACE: WALL TONGUE";
       this.canvas.dataset.botSlows = this.bots
         .map((bot) => Math.max(0, bot.slowUntil - this.now).toFixed(2))
         .join(",");
+      this.canvas.dataset.soapBubbles = `${this.projectiles.filter((projectile) => projectile.isSoapBubble).length}`;
     };
 
-    window.addEventListener("blur", () => {
+    window.addEventListener("keydown", (event) => {
+      if (event.code !== "Space" || event.repeat || game.phase !== "playing" || !isFrog()) return;
+      event.preventDefault();
+      spaceHeld = true;
+      beginTongue();
+    });
+    window.addEventListener("keyup", (event) => {
+      if (event.code !== "Space" || !isFrog()) return;
+      event.preventDefault();
+      spaceHeld = false;
       canLaunchTongue = true;
       releaseTongue();
     });
-    window.addEventListener("pointerup", (event) => {
-      if (event.button === 0 && isFrog()) {
-        canLaunchTongue = true;
-        releaseTongue();
-      }
+    window.addEventListener("blur", () => {
+      spaceHeld = false;
+      canLaunchTongue = true;
+      releaseTongue();
     });
     game.canvas.dataset.frogInstalled = "true";
     game.canvas.dataset.tongueState = "idle";
