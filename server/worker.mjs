@@ -42,6 +42,23 @@ const publicMember = (member) => ({
   hits: member.hits || 0,
 });
 
+/* 스킬 효과 중계값. 그림에만 쓰이지만 그대로 흘려보내지 않고 모양을 강제한다.
+   t = 개구리 혀끝 [x, y], m = 근접 휘두름 [방향, 사거리, 색]. */
+const numbers = (value, count) =>
+  Array.isArray(value) && value.length === count && value.every(Number.isFinite)
+    ? value.map((n) => Math.round(n * 100) / 100)
+    : null;
+
+const cleanFx = (fx) => {
+  if (!fx || typeof fx !== "object") return null;
+  const cleaned = {};
+  const tongue = numbers(fx.t, 2);
+  const melee = numbers(fx.m, 3);
+  if (tongue) cleaned.t = tongue;
+  if (melee) cleaned.m = melee;
+  return Object.keys(cleaned).length ? cleaned : null;
+};
+
 const clearStats = (member) => {
   member.kills = 0;
   member.damage = 0;
@@ -380,7 +397,7 @@ export class GameRoom extends DurableObject {
     const shots = Number(data.shots);
     if (Number.isFinite(shots) && shots > (member.shots || 0)) member.shots = Math.min(9999, Math.floor(shots));
     await this.ctx.storage.put("room", room);
-    this.broadcast(room, { type: "state", player: publicMember(member) }, ws);
+    this.broadcast(room, { type: "state", player: publicMember(member), fx: cleanFx(data.fx) }, ws);
   }
 
   /* 발사 중계. 총알은 각 화면이 스스로 만들기 때문에, 쏜 사실을 알려주지 않으면

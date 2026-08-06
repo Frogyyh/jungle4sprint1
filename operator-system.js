@@ -44,6 +44,10 @@
       demolitionist: { id: "grenade_launcher", name: "6-SHOT GRENADE LAUNCHER", damage: 40, pellets: 1, rpm: 90, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 780, projectileSpeed: 620, color: 0xffa8f0 },
     });
 
+    /* 병과별 무기표를 밖에서도 쓸 수 있게 걸어둔다.
+       멀티플레이(multiplayer-client.js)에서 상대 캐릭터에게 같은 무기를 물린다. */
+    game.operatorWeapons = WEAPONS;
+
     const ui = {
       grid: document.querySelector("#operator-loadout-grid"),
       briefing: document.querySelector("#loadout .briefing"),

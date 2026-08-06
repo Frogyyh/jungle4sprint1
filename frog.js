@@ -130,6 +130,7 @@
         if (part.material && part.material.dispose) part.material.dispose();
       });
       tongue = null;
+      game._tongueTip = null;
       if (visionRing) visionRing.visible = false;
       game.canvas.dataset.tongueState = "idle";
       game.canvas.dataset.tongueLength = "0";
@@ -148,6 +149,8 @@
       tongue.tip.position.set(end.x, end.y, 23);
       game.canvas.dataset.tongueState = tongue.phase;
       game.canvas.dataset.tongueLength = `${Math.round(length)}`;
+      // 멀티플레이 중계용 — 다른 화면에도 같은 혀를 그린다.
+      game._tongueTip = { x: end.x, y: end.y };
     };
 
     const beginTongue = () => {

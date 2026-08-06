@@ -13,6 +13,9 @@
   let lastStateSentAt = 0;
   const actors = new Map();
   const hostBots = []; // 방장이 직접 돌리는 봇 액터
+  const remoteFx = new Map(); // playerId → 원격 스킬 효과 메시
+  const ALLY_SHOT = 0x6de6df; // 아군 총알
+  const ENEMY_SHOT = 0xff6b67; // 적 총알
   let resolveReady;
   let rejectReady;
   const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
@@ -66,7 +69,13 @@
     for (const member of room.members) {
       if (member.id === playerId) continue;
       const position = game.player.pos.clone().set(member.x ?? 0, member.y ?? 0);
-      const actor = new Bot(`net-${member.id.slice(0, 6)}`, position, game.player.weapon);
+      /* 상대의 병과를 그대로 입힌다 — 스프라이트(operatorId)와 무기가 여기서 갈린다.
+         이게 없으면 모두가 내 무기를 든 군인으로 보인다. */
+      const weapon = game.operatorWeapons?.[member.characterId] || game.player.weapon;
+      const actor = new Bot(`net-${member.id.slice(0, 6)}`, position, weapon);
+      actor.operatorId = member.characterId || "soldier";
+      actor.ammo = weapon.magSize;
+      actor.reserve = weapon.reserve;
       /* 봇은 방장 화면에서만 AI 로 움직인다(_bot). 나머지 참가자에게는
          다른 사람과 똑같이 서버가 보내주는 위치를 따라가는 액터(_remote)다. */
       const myBot = Boolean(member.bot) && iAmHost;
@@ -82,6 +91,8 @@
       paintActor(actor, member);
       actor.syncMesh();
       game.entityGroup.add(actor.mesh);
+      // 스프라이트·무기 모델을 실제로 붙인다.
+      game.applyWeaponVisual?.(actor, weapon.id);
       // 코어의 투사체 판정과 AI 순회는 game.bots 만 훑는다.
       if (actor.team === "enemy" || myBot) game.bots.push(actor);
       if (myBot) hostBots.push(actor);
@@ -120,6 +131,7 @@
     const originalStart = game.startRound.bind(game);
     game.startRound = function startMultiplayerRound() {
       originalStart();
+      clearRemoteFx();
       createRemoteActors();
       active = true;
       this.showToast(`ONLINE // TEAM ${findMember(playerId)?.team || "?"}`);
@@ -159,6 +171,14 @@
     const originalSpawn = game.spawnProjectile.bind(game);
     game.spawnProjectile = function networkSpawn(source, position, direction, weapon) {
       originalSpawn(source, position, direction, weapon);
+
+      /* 총알 색으로 편을 가른다 — 병과별 색은 예쁘지만 교전 중에는
+         "내 편이 쏜 것인가"가 먼저 보여야 한다. */
+      const projectile = this.projectiles[this.projectiles.length - 1];
+      if (active && projectile?.mesh?.material?.color) {
+        projectile.mesh.material.color.setHex(source?.team === "enemy" ? ENEMY_SHOT : ALLY_SHOT);
+      }
+
       const shooterId = controlledId(source);
       if (!shooterId || !active || this.phase !== "playing") return;
       send({
@@ -254,6 +274,7 @@
         y: this.player.pos.y,
         dir: this.player.dir,
         shots: this.player.shots,
+        fx: localFx(),
       });
     };
 
@@ -269,6 +290,91 @@
     serverEnding = true;
     const own = findMember(playerId);
     game.endRound(winner === own?.team, winner === own?.team ? "상대 팀을 전멸시켰습니다." : "우리 팀이 전투불능 상태가 되었습니다.");
+  }
+
+  /* ---------------- 남의 스킬 그리기 ----------------
+     스킬 효과는 각 화면이 자기 것만 만든다. 그래서 남의 개구리 혀나 근접 휘두름이
+     전혀 보이지 않았다. 쓰는 쪽이 위치 갱신에 효과 상태를 얹어 보내고,
+     받는 쪽이 같은 자리에 같은 모양을 그린다(판정은 서버 몫, 이건 그림뿐이다). */
+
+  const stripMesh = (color, opacity = 0.9) => {
+    const strip = game.floor.clone(false);
+    strip.geometry = game.floor.geometry.clone();
+    strip.material = game.floor.material.clone();
+    strip.material.color.setHex(color);
+    strip.material.transparent = true;
+    strip.material.depthWrite = false;
+    strip.material.opacity = opacity;
+    game.fxGroup.add(strip);
+    return strip;
+  };
+
+  const placeStrip = (strip, from, to, width) => {
+    const params = game.floor.geometry?.parameters || {};
+    const baseWidth = params.width || 2600;
+    const baseHeight = params.height || 1800;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const length = Math.max(1, Math.hypot(dx, dy));
+    strip.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, 22);
+    strip.rotation.z = Math.atan2(dy, dx);
+    strip.scale.set(length / baseWidth, width / baseHeight, 1);
+  };
+
+  const disposeStrip = (strip) => {
+    strip.parent?.remove(strip);
+    strip.geometry?.dispose?.();
+    strip.material?.dispose?.();
+  };
+
+  /* 내 화면에서 지금 켜져 있는 효과를 요약한다. 위치 전송에 함께 실린다. */
+  function localFx() {
+    const fx = {};
+    const tip = game._tongueTip;
+    if (tip) fx.t = [Math.round(tip.x), Math.round(tip.y)];
+    const swing = game._meleeSwing;
+    if (swing && game.now < swing.until) {
+      fx.m = [Number(swing.direction.toFixed(2)), Math.round(swing.range), swing.color];
+    }
+    return Object.keys(fx).length ? fx : null;
+  }
+
+  function clearRemoteFx(playerId = null) {
+    for (const [id, entry] of remoteFx) {
+      if (playerId && id !== playerId) continue;
+      if (entry.tongue) disposeStrip(entry.tongue);
+      if (entry.melee) disposeStrip(entry.melee);
+      remoteFx.delete(id);
+    }
+  }
+
+  function applyRemoteFx(playerId, fx) {
+    const actor = actors.get(playerId);
+    if (!actor || actor._bot) return; // 내 봇은 내 화면이 직접 그린다
+    const entry = remoteFx.get(playerId) || {};
+
+    // 개구리 혀 — 사람과 혀끝을 잇는 선
+    if (fx?.t && actor.alive) {
+      entry.tongue = entry.tongue || stripMesh(0x9ef07a, 0.95);
+      placeStrip(entry.tongue, actor.pos, { x: fx.t[0], y: fx.t[1] }, 8);
+    } else if (entry.tongue) {
+      disposeStrip(entry.tongue);
+      entry.tongue = null;
+    }
+
+    // 근접 휘두름 — 앞쪽으로 뻗는 짧은 궤적
+    if (fx?.m && actor.alive) {
+      const [dir, range, color] = fx.m;
+      entry.melee = entry.melee || stripMesh(color || 0xffffff, 0.75);
+      const tip = { x: actor.pos.x + Math.cos(dir) * range, y: actor.pos.y + Math.sin(dir) * range };
+      placeStrip(entry.melee, actor.pos, tip, Math.max(14, range * 0.45));
+      entry.meleeUntil = performance.now() + 260;
+    } else if (entry.melee && performance.now() > (entry.meleeUntil || 0)) {
+      disposeStrip(entry.melee);
+      entry.melee = null;
+    }
+
+    remoteFx.set(playerId, entry);
   }
 
   /* 남이 쏜 총알을 내 화면에도 만든다. 피해는 서버가 정하므로 이 총알은
@@ -289,7 +395,10 @@
       resolveReady(message.room); return;
     }
     if (message.room) room = message.room;
-    if (message.type === "state") applyMemberState(message.player);
+    if (message.type === "state") {
+      applyMemberState(message.player);
+      applyRemoteFx(message.player.id, message.fx);
+    }
     if (message.type === "hit") {
       const actor = actors.get(message.targetId);
       if (actor) { actor.hp = message.hp; actor.alive = message.alive; actor.mesh.visible = message.alive; }
