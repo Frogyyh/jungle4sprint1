@@ -1,0 +1,5 @@
+Char_ : 캐릭터 에셋
+Wep_ : 무기(또는 프로젝타일) 에셋
+
+10Char : 전체 캐릭터 10개 에셋. 위에서부터 아래까지 순서대로 (군인, 쌍권총, 방패, 로봇, 사냥꾼, 닌자, 스나이퍼, 폭파광, 개구리, 사신)
+10Wep : 전체 무기 11개 에셋, 차례대로 (Rifle, PistolR, PistolL, Shield, Railgun, DuobleBarrel, Katana, Shuriken, SniperRifle, ShellGrenade, Scythe)

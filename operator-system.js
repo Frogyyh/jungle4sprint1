@@ -284,6 +284,17 @@
           opacity: 0.45,
           follow: () => [actor.pos.clone(), actor.pos.clone().add(offset)],
         });
+        const corner = actor.pos.clone().add(offset);
+        const inward = vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(-22);
+        const tangent = vector(-Math.sin(angle), Math.cos(angle)).multiplyScalar(angle < direction ? -12 : 12);
+        createWorldStrip(corner.clone().add(inward), corner.clone().add(tangent), 5.2, color, {
+          duration: 0.28,
+          opacity: 0.86,
+          follow: () => [
+            actor.pos.clone().add(offset).add(inward),
+            actor.pos.clone().add(offset).add(tangent),
+          ],
+        });
       }
     };
 
@@ -336,9 +347,13 @@
       });
     };
 
-    const getWeaponPieces = () => game.player.mesh.children.filter((part) => (
-      part === game.player._weaponVisualBase || part.userData?.breachlineWeaponClone
-    ));
+    const getWeaponPieces = () => {
+      const root = game.player._weaponVisualRoot;
+      const source = root?.children?.length ? root.children : game.player.mesh.children;
+      return source.filter((part) => (
+        part === game.player._weaponVisualBase || part.userData?.breachlineWeaponClone
+      ));
+    };
 
     const beginMeleeAnimation = (range, halfAngle, color) => {
       game._meleeSwing = {
@@ -393,6 +408,10 @@
     };
 
     const updateOperatorFx = () => {
+      while (game._operatorFx.length > 220) {
+        const expired = game._operatorFx.shift();
+        if (expired) disposeFxMesh(expired.mesh, expired.sharedGeometry);
+      }
       for (let index = game._operatorFx.length - 1; index >= 0; index--) {
         const effect = game._operatorFx[index];
         if (game.now >= effect.endAt) {
@@ -479,16 +498,105 @@
       return hits;
     };
 
-    const showExplosion = (point, color, radius) => {
-      const mesh = createEffectMesh(color, radius / 24);
-      mesh.position.set(point.x, point.y, 14);
-      mesh.material.opacity = 0.4;
+    const createBurstParticle = (point, color, velocity, scale, duration, opacity = 0.9) => {
+      const mesh = createEffectMesh(color, scale);
+      mesh.position.set(point.x, point.y, 18);
+      mesh.material.opacity = opacity;
+      mesh.material.depthWrite = false;
       game.fxGroup.add(mesh);
-      setTimeout(() => {
-        game.fxGroup.remove(mesh);
-        mesh.geometry.dispose();
-        mesh.material.dispose();
-      }, 180);
+      game._operatorFx.push({
+        mesh,
+        startAt: game.now,
+        endAt: game.now + duration,
+        baseOpacity: opacity,
+        sharedGeometry: false,
+        update: (progress) => {
+          mesh.position.set(
+            point.x + velocity.x * progress,
+            point.y + velocity.y * progress,
+            18 + progress * 3,
+          );
+          mesh.scale.setScalar(scale * (1 - progress * 0.62));
+          mesh.material.opacity = opacity * (1 - progress);
+        },
+      });
+    };
+
+    const showFragBurst = (grenade, radius) => {
+      game.canvas.dataset.lastDetonationFx = "frag-shrapnel";
+      for (let index = 0; index < 18; index++) {
+        const angle = index / 18 * Math.PI * 2 + Math.sin(index * 4.17) * 0.13;
+        const direction = vector(Math.cos(angle), Math.sin(angle));
+        const start = grenade.pos.clone().add(direction.clone().multiplyScalar(8 + index % 4));
+        const end = grenade.pos.clone().add(direction.clone().multiplyScalar(radius * (0.5 + (index % 5) * 0.1)));
+        createWorldStrip(start, end, index % 3 === 0 ? 5.5 : 2.8, index % 2 ? 0xffb36b : 0xff625f, {
+          duration: 0.24 + index % 4 * 0.025,
+          opacity: 0.92,
+        });
+        if (index % 3 === 0) {
+          createBurstParticle(grenade.pos, 0xffd2a1, direction.multiplyScalar(radius * 0.72), 0.18, 0.34, 0.86);
+        }
+      }
+      createBurstParticle(grenade.pos, 0xffffff, vector(), 0.62, 0.18, 0.95);
+    };
+
+    const showLauncherBurst = (grenade, radius) => {
+      game.canvas.dataset.lastDetonationFx = "launcher-plasma-fan";
+      const travelAngle = grenade.vel?.lengthSq?.() > 0.01 ? Math.atan2(grenade.vel.y, grenade.vel.x) : 0;
+      for (let index = 0; index < 13; index++) {
+        const spread = (index - 6) / 6 * Math.PI * 0.72;
+        const angle = travelAngle + Math.PI + spread + Math.sin(index * 2.7) * 0.09;
+        const direction = vector(Math.cos(angle), Math.sin(angle));
+        const start = grenade.pos.clone().add(direction.clone().multiplyScalar(5));
+        const end = grenade.pos.clone().add(direction.clone().multiplyScalar(radius * (0.45 + (index % 4) * 0.15)));
+        createWorldStrip(start, end, 3.4 + index % 2 * 2.2, index % 2 ? 0xffa8f0 : 0xb86cff, {
+          duration: 0.3,
+          opacity: 0.88,
+        });
+        if (index % 2 === 0) {
+          createBurstParticle(grenade.pos, 0xf2c4ff, direction.multiplyScalar(radius * 0.58), 0.16, 0.38, 0.74);
+        }
+      }
+      createBurstParticle(grenade.pos, 0xffffff, vector(), 0.48, 0.2, 0.9);
+    };
+
+    const showFlashBurst = (grenade) => {
+      game.canvas.dataset.lastDetonationFx = "flash-starburst";
+      for (let index = 0; index < 20; index++) {
+        const angle = index / 20 * Math.PI * 2;
+        const direction = vector(Math.cos(angle), Math.sin(angle));
+        const length = index % 2 ? 104 : 178;
+        createWorldStrip(
+          grenade.pos.clone().add(direction.clone().multiplyScalar(5)),
+          grenade.pos.clone().add(direction.multiplyScalar(length)),
+          index % 2 ? 2.2 : 4.8,
+          index % 3 ? 0xffe67d : 0xffffff,
+          { duration: 0.22, opacity: 0.96 },
+        );
+      }
+      createBurstParticle(grenade.pos, 0xffffff, vector(), 0.78, 0.16, 1);
+    };
+
+    const styleSmokeCloud = (smoke) => {
+      if (!smoke?.mesh || smoke.mesh.userData?.breachlineSmokeCluster) return;
+      game.canvas.dataset.lastDetonationFx = "smoke-cluster";
+      game.canvas.dataset.smokePuffCount = "14";
+      smoke.mesh.userData = { ...smoke.mesh.userData, breachlineSmokeCluster: true };
+      smoke.mesh.material.transparent = true;
+      smoke.mesh.material.opacity = 0.08;
+      smoke.mesh.material.depthWrite = false;
+      for (let index = 0; index < 14; index++) {
+        const angle = index / 14 * Math.PI * 2 + (index % 3) * 0.18;
+        const distance = smoke.radius * (0.12 + (index % 5) * 0.13);
+        const puff = smoke.mesh.clone(false);
+        puff.material = smoke.mesh.material.clone();
+        puff.material.color.setHex(index % 3 === 0 ? 0x58717d : index % 3 === 1 ? 0x435b68 : 0x647b84);
+        puff.material.opacity = 0.3 + (index % 4) * 0.035;
+        puff.position.set(Math.cos(angle) * distance, Math.sin(angle) * distance, 0.15 + index * 0.002);
+        puff.scale.setScalar(0.2 + (index % 5) * 0.055);
+        puff.userData = { breachlineSmokePuff: true };
+        smoke.mesh.add(puff);
+      }
     };
 
     const originalExplode = game.explode.bind(game);
@@ -497,7 +605,8 @@
         const radius = grenade.type === "frag" ? 100 : 67;
         const damage = grenade.type === "frag" ? 60 : 40;
         const hits = damageInRadius(grenade.owner, grenade.pos, radius, damage);
-        showExplosion(grenade.pos, grenade.type === "frag" ? 0xff6b67 : 0xffa8f0, radius);
+        if (grenade.type === "frag") showFragBurst(grenade, radius);
+        else showLauncherBurst(grenade, radius);
         if (grenade.owner === this.player) this.showToast(`${grenade.type.toUpperCase()} IMPACT · ${hits} HIT`);
         disposeFxMesh(grenade.mesh);
         return;
@@ -510,7 +619,24 @@
         smoke.endAt = this.now + 5;
         smoke.mesh.scale.setScalar(1.5);
       }
+      if (grenade.type === "flash") showFlashBurst(grenade);
+      if (grenade.type === "smoke" && this.smokes.length > smokeCount) {
+        styleSmokeCloud(this.smokes[this.smokes.length - 1]);
+      }
       disposeFxMesh(grenade.mesh);
+    };
+
+    const originalUpdateSmokes = game.updateSmokes.bind(game);
+    game.updateSmokes = function updateClusteredSmokes() {
+      for (const smoke of this.smokes) {
+        if (smoke.endAt > this.now || !smoke.mesh?.userData?.breachlineSmokeCluster) continue;
+        for (const child of smoke.mesh.children) {
+          if (child.userData?.breachlineSmokePuff && child.material !== smoke.mesh.material) {
+            child.material?.dispose?.();
+          }
+        }
+      }
+      originalUpdateSmokes();
     };
 
     const meleeAttack = (damage, range, halfAngle) => {

@@ -253,25 +253,30 @@
       const mesh = grenade.mesh;
       if (!mesh || mesh.userData?.breachlineStyled) return;
       mesh.userData = { ...mesh.userData, breachlineStyled: true };
-      const flash = grenade.type === "flash";
-      mesh.scale.setScalar(flash ? 1 : 1.12);
-      mesh.material.color.setHex(flash ? 0xffdf70 : 0x7088a8);
+      const profile = {
+        flash: { shell: 0xffd85e, core: 0xffffff, band: 0xff7a32, scale: 1, coreScale: 0.42, bandX: 0.17, bandY: 0.85 },
+        smoke: { shell: 0x526b78, core: 0xaad5c0, band: 0x5ad68a, scale: 1.16, coreScale: 0.5, bandX: 0.92, bandY: 0.18 },
+        frag: { shell: 0x596a42, core: 0xd5dd94, band: 0xff765f, scale: 1.14, coreScale: 0.48, bandX: 0.9, bandY: 0.2 },
+        launcher: { shell: 0x5e456b, core: 0xffc5f5, band: 0xb86cff, scale: 1.08, coreScale: 0.46, bandX: 0.86, bandY: 0.22 },
+      }[grenade.type] || { shell: 0x7088a8, core: 0xc4d0d4, band: 0x283a4c, scale: 1.12, coreScale: 0.5, bandX: 0.92, bandY: 0.18 };
+      mesh.scale.setScalar(profile.scale);
+      mesh.material.color.setHex(profile.shell);
 
       const core = mesh.clone(false);
       core.geometry = mesh.geometry.clone();
       core.material = mesh.material.clone();
-      core.material.color.setHex(flash ? 0xffffff : 0xc4d0d4);
+      core.material.color.setHex(profile.core);
       core.position.set(0, 0, 0.8);
-      core.scale.set(flash ? 0.42 : 0.5, flash ? 0.42 : 0.5, 1);
+      core.scale.set(profile.coreScale, profile.coreScale, 1);
       core.userData = { breachlineGrenadeDetail: true };
       mesh.add(core);
 
       const band = mesh.clone(false);
       band.geometry = mesh.geometry.clone();
       band.material = mesh.material.clone();
-      band.material.color.setHex(flash ? 0xff8f3d : 0x283a4c);
+      band.material.color.setHex(profile.band);
       band.position.set(0, 0, 0.9);
-      band.scale.set(flash ? 0.17 : 0.92, flash ? 0.85 : 0.18, 1);
+      band.scale.set(profile.bandX, profile.bandY, 1);
       band.userData = { breachlineGrenadeDetail: true };
       mesh.add(band);
     };
