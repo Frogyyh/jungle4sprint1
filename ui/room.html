@@ -84,9 +84,10 @@
 
       /* 팀 */
 
+      /* A팀 / B팀을 좌우로 나눈다. */
       .teams {
         display: grid;
-        grid-template-rows: 1fr 1fr;
+        grid-template-columns: 1fr 1fr;
         gap: 12px;
         min-height: 0;
       }
@@ -112,6 +113,8 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
         margin-bottom: 11px;
       }
 
@@ -152,14 +155,32 @@
         cursor: not-allowed;
       }
 
+      /* 팀원은 팀명 아래로 한 줄에 한 명씩 세로로 쌓는다. */
       .slots {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
+        align-content: start;
         gap: 10px;
         flex: 1;
         min-height: 0;
+        overflow-y: auto;
+        /* 스크롤은 되지만 스크롤바는 숨긴다. */
+        scrollbar-width: none;
+        -ms-overflow-style: none;
       }
 
+      /* 좁은 화면에서 본문도 세로로 스크롤된다 — 같이 숨긴다. */
+      .slots::-webkit-scrollbar,
+      .room-body::-webkit-scrollbar {
+        display: none;
+      }
+
+      .room-body {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+
+      /* 초상화(44) + 상하 여백 — 빈 자리도 같은 높이를 쓴다. */
       .slot {
         display: flex;
         align-items: center;
@@ -168,16 +189,31 @@
         border: 1px solid var(--line);
         background: #ffffff09;
         min-width: 0;
+        min-height: 68px;
       }
 
+      /* 빈 자리는 눌러서 테스트 봇을 채운다. */
       .slot.empty {
+        width: 100%;
         border-style: dashed;
         border-color: #22343d;
         background: transparent;
         justify-content: center;
         color: #43585f;
+        font-family: inherit;
         font-size: 10px;
+        font-weight: 800;
         letter-spacing: 0.14em;
+        cursor: pointer;
+        transition: 0.18s ease;
+      }
+
+      .slot.empty:hover,
+      .slot.empty:focus-visible {
+        border-color: var(--cyan);
+        color: var(--cyan);
+        background: #6de6df0f;
+        outline: none;
       }
 
       .slot.me {
@@ -250,6 +286,15 @@
 
       .slot-ready.off {
         color: #4e6872;
+      }
+
+      /* 방장이 우클릭으로 내보낼 수 있는 자리 — 올려두면 붉게 표시된다. */
+      .slot.kickable {
+        cursor: context-menu;
+      }
+
+      .slot.kickable:hover {
+        border-color: var(--red);
       }
 
       /* 맵 */
@@ -732,6 +777,7 @@
         hasPassword,
         isHost,
         joinRoom,
+        kickMember,
         leaveRoom,
         playerCount,
         requireNickname,
@@ -778,15 +824,19 @@
 
           for (let i = 0; i < perTeam(); i += 1) {
             const m = members[i];
-            const slot = document.createElement("div");
 
+            // 빈 자리를 누르면 그 팀에 테스트 봇이 들어온다.
             if (!m) {
-              slot.className = "slot empty";
-              slot.textContent = "EMPTY";
-              box.appendChild(slot);
+              const empty = document.createElement("button");
+              empty.type = "button";
+              empty.className = "slot empty";
+              empty.textContent = "＋ 봇 추가";
+              empty.addEventListener("click", () => addBot(team));
+              box.appendChild(empty);
               continue;
             }
 
+            const slot = document.createElement("div");
             slot.className = m.name === me ? "slot me" : "slot";
 
             const portrait = document.createElement("div");
@@ -830,6 +880,30 @@
             }
 
             slot.append(portrait, info, ready);
+
+            // 참여자 우클릭 = 내보내기. 방장만, 방장 자신은 대상이 아니다.
+            const canKick = isHost(room, me) && !isHost(room, m.name);
+            if (canKick) {
+              slot.classList.add("kickable");
+              slot.title = `우클릭하면 ${m.name} 님을 내보냅니다`;
+            }
+            slot.addEventListener("contextmenu", (event) => {
+              event.preventDefault(); // 브라우저 기본 메뉴 대신 안내를 띄운다
+              if (!canKick) {
+                toast(
+                  isHost(room, m.name)
+                    ? "방장은 내보낼 수 없습니다."
+                    : "방장만 참여자를 내보낼 수 있습니다."
+                );
+                return;
+              }
+              if (!confirm(`${m.name} 님을 내보낼까요?`)) return;
+              if (kickMember(roomId, me, m.name)) {
+                render();
+                toast(`${m.name} 을(를) 내보냈습니다.`);
+              }
+            });
+
             box.appendChild(slot);
           }
         }
@@ -912,16 +986,23 @@
       }
 
       // 테스트용: 서버 연동 시 이 블록과 버튼을 함께 지운다.
-      el("add-test").addEventListener("click", () => {
+      // team 을 주면 그 팀으로, 없으면 자리가 남은 팀으로 들어간다.
+      function addBot(team = null) {
         const pool = CHARACTERS[Math.floor(Math.random() * CHARACTERS.length)];
         const added = addTestMember(roomId, pool.id);
         if (!added) {
           toast("빈 자리가 없습니다.");
           return;
         }
+        if (team && added.team !== team) {
+          switchTeam(roomId, added.name, team);
+          setReady(roomId, added.name, true); // 팀을 옮기면 준비가 풀린다
+        }
         render();
         toast(`${added.name} 이(가) 참여했습니다. (테스트)`);
-      });
+      }
+
+      el("add-test").addEventListener("click", () => addBot());
 
       el("leave").addEventListener("click", () => {
         leaveRoom(roomId, me);

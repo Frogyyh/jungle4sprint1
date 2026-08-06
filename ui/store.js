@@ -287,6 +287,18 @@ export function switchTeam(roomId, name, team) {
   return moved;
 }
 
+/** 방장이 참여자를 내보낸다. 방장 자신은 내보낼 수 없다. */
+export function kickMember(roomId, hostName, target) {
+  let kicked = false;
+  updateRoom(roomId, (room) => {
+    if (!isHost(room, hostName)) return false;
+    if (target === room.host || !findMember(room, target)) return false;
+    room.members = room.members.filter((m) => m.name !== target);
+    kicked = true;
+  });
+  return kicked;
+}
+
 /* 테스트용: 서버가 없어 혼자 접속하므로 준비/시작 흐름을 확인할 수 없다.
    빈 자리에 준비 완료된 더미 참여자를 하나 넣는다. 서버 연동 시 삭제할 것. */
 const BOT_NAMES = ["탄창", "각도장인", "연막탄", "문지기", "코너캠퍼", "야시경"];
