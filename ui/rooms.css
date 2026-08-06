@@ -1,0 +1,344 @@
+/* ui/rooms.css — ui/rooms.html 방 목록 화면 전용 스타일 */
+body {
+  overflow: hidden;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* ---------- 왼쪽 사이드바 ---------- */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 26px 22px 24px;
+  border-right: 1px solid var(--line);
+  background: #040d14b3;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.brand-mark {
+  color: var(--cyan);
+  font-size: 18px;
+}
+
+.brand small {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+}
+
+.me {
+  margin-top: 26px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #ffffff09;
+}
+
+.me .label {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  font-weight: 800;
+}
+
+.me .name {
+  margin-top: 7px;
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  word-break: break-all;
+}
+
+.me button {
+  margin-top: 12px;
+  width: 100%;
+}
+
+/* 조작키 안내 — 게임 로드아웃 화면과 같은 내용 */
+.controls-panel {
+  margin-top: 22px;
+}
+
+.controls-panel .label {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  font-weight: 800;
+}
+
+.controls-panel ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.controls-panel li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.controls-panel b {
+  color: #b9cbd1;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* 방 만들기 버튼은 왼쪽 하단 고정 */
+.sidebar-bottom {
+  margin-top: auto;
+}
+
+.sidebar-bottom .primary-button {
+  width: 100%;
+}
+
+/* ---------- 오른쪽 방 목록 ---------- */
+
+.content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 26px 30px 24px;
+}
+
+.content-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.content-head h2 {
+  margin: 6px 0 0;
+  font-size: 30px;
+  letter-spacing: -0.04em;
+}
+
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.room-count {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+.room-count b {
+  color: var(--cyan);
+}
+
+.list-head,
+.room-row {
+  display: grid;
+  grid-template-columns: 1fr 160px 110px;
+  gap: 16px;
+  align-items: center;
+}
+
+.list-head {
+  padding: 0 18px 9px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  font-weight: 800;
+}
+
+.list-head span:last-child,
+.room-row .count {
+  text-align: right;
+}
+
+.room-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.room-row {
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #ffffff09;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.room-row:hover:not(.full),
+.room-row:focus-visible {
+  border-color: var(--cyan);
+  background: #6de6df1f;
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.room-row .title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 마우스를 올리면 방 제목 → "방 참여하기" */
+.room-row .title .join-label {
+  display: none;
+  color: var(--cyan);
+  letter-spacing: 0.12em;
+}
+
+.room-row:hover:not(.full) .title .room-title,
+.room-row:focus-visible:not(.full) .title .room-title {
+  display: none;
+}
+
+.room-row:hover:not(.full) .title .join-label,
+.room-row:focus-visible:not(.full) .title .join-label {
+  display: inline;
+}
+
+/* 비밀번호 방 자물쇠 */
+.room-row .lock {
+  margin-right: 7px;
+  color: var(--flash);
+  font-size: 12px;
+}
+
+.room-row:hover:not(.full) .title .lock {
+  display: none;
+}
+
+.room-row .host {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-row .host b {
+  color: #b9cbd1;
+  font-weight: 800;
+}
+
+.room-row .count {
+  font-size: 14px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.room-row .count .now {
+  color: var(--cyan);
+}
+
+.room-row .count .slash {
+  margin: 0 3px;
+  color: #4e6872;
+}
+
+/* 정원이 찬 방 */
+.room-row.full {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.room-row.full .count .now {
+  color: var(--red);
+}
+
+.empty {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  height: 100%;
+  color: var(--muted);
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.empty .mark {
+  color: #2c4048;
+  font-size: 44px;
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+  }
+  .sidebar {
+    order: 2;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-right: 0;
+    border-top: 1px solid var(--line);
+  }
+  .brand,
+  .me .label,
+  .me button,
+  .controls-panel {
+    display: none;
+  }
+  .me {
+    margin: 0;
+    padding: 8px 12px;
+  }
+  .me .name {
+    margin: 0;
+    font-size: 13px;
+  }
+  .sidebar-bottom {
+    flex: 1;
+  }
+  .content {
+    order: 1;
+    padding: 18px 16px 8px;
+  }
+  .list-head,
+  .room-row {
+    grid-template-columns: 1fr 92px;
+  }
+  .list-head span:nth-child(2),
+  .room-row .host {
+    display: none;
+  }
+}

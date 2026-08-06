@@ -355,6 +355,8 @@
     const syncGrenadeTelegraphs = () => {
       const activeIds = new Set();
       for (const grenade of game.grenades) {
+        // 유탄발사기 직사 유탄은 비행 중 범위/타이머를 표시하지 않는다.
+        if (grenade.directFire) continue;
         const key = String(grenade.id);
         activeIds.add(key);
         let element = game._grenadeTelegraphs.get(key);
@@ -414,6 +416,33 @@
       ui.throwVector.classList.add("active");
       game.canvas.dataset.predictedLanding = `${Math.round(destination.x)}:${Math.round(destination.y)}`;
       game.canvas.dataset.predictedThrowPower = power.toFixed(2);
+    };
+
+    // 폭탄마: 유탄 착탄 예정 지점에 폭발 반경(67)을 미리 표시한다.
+    const LAUNCHER_RADIUS = 67;
+    const updateLauncherPreview = () => {
+      const demolitionist = game.activeOperatorId === "demolitionist";
+      if (!demolitionist || game.phase !== "playing" || !game.player.alive) {
+        ui.throwPreview.classList.add("hidden");
+        return;
+      }
+      const launcherRange = game.player.weapon?.range || 780;
+      const aim = game.mouse.world.clone().sub(game.player.pos);
+      if (aim.lengthSq() < 1) aim.set(Math.cos(game.player.dir), Math.sin(game.player.dir));
+      const clamped = game.player.pos.clone().add(
+        aim.clone().normalize().multiplyScalar(Math.min(aim.length(), launcherRange)),
+      );
+      const screen = worldToScreen(clamped);
+      const size = Math.max(42, LAUNCHER_RADIUS * 2 * screen.unitsToPixels);
+      ui.throwPreview.classList.remove("hidden");
+      ui.throwPreview.classList.add("landing-only");
+      ui.throwPreview.classList.remove("smoke");
+      ui.throwPreview.style.left = `${screen.x}px`;
+      ui.throwPreview.style.top = `${screen.y}px`;
+      ui.throwPreview.style.width = `${size}px`;
+      ui.throwPreview.style.height = `${size}px`;
+      ui.throwPreview.style.setProperty("--fill-angle", "0deg");
+      game.canvas.dataset.launcherPreview = `${Math.round(clamped.x)}:${Math.round(clamped.y)}`;
     };
 
     const clearGadget = () => {
@@ -734,6 +763,7 @@
       }
       syncGrenadeTelegraphs();
       updateThrowPreview();
+      updateLauncherPreview();
       const insideSmoke = this.isInsideSmoke(this.player.pos);
       ui.smoke.classList.toggle("active", insideSmoke && this.player.flashedUntil <= this.now);
       const fixedScale = this.activeOperatorId === "sniper" ? SNIPER_VIEW_SCALE : DEFAULT_VIEW_SCALE;

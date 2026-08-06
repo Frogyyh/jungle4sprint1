@@ -6,54 +6,7 @@
     <meta name="theme-color" content="#07111c" />
     <title>BREACHLINE — 시작</title>
     <link rel="stylesheet" href="ui.css" />
-    <style>
-      body {
-        align-items: center;
-        justify-content: center;
-        padding: 20px;
-      }
-
-      .start-card {
-        width: min(620px, 100%);
-      }
-
-      .nickname-row {
-        display: flex;
-        gap: 10px;
-        margin: 34px 0 6px;
-      }
-
-      .nickname-row .primary-button {
-        flex: none;
-        padding: 0 26px;
-        height: 46px;
-      }
-
-      .hint {
-        margin: 18px 0 0;
-        color: var(--muted);
-        font-size: 11px;
-        letter-spacing: 0.1em;
-      }
-
-      .divider {
-        height: 1px;
-        margin: 26px 0 18px;
-        background: linear-gradient(90deg, transparent, var(--line), transparent);
-      }
-
-      @media (max-width: 560px) {
-        .screen-card {
-          padding: 30px 18px 24px;
-        }
-        .nickname-row {
-          flex-direction: column;
-        }
-        .nickname-row .primary-button {
-          height: 46px;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="landing.css" />
   </head>
   <body>
     <main class="screen-card start-card">
@@ -89,31 +42,6 @@
 
     <div id="toast" class="toast" aria-live="polite"></div>
 
-    <script type="module">
-      import { getNickname, setNickname, validateNickname } from "./store.js";
-
-      const form = document.getElementById("nickname-form");
-      const input = document.getElementById("nickname");
-      const error = document.getElementById("nickname-error");
-
-      // 뒤로 돌아온 경우 이전 닉네임을 되살린다.
-      input.value = getNickname();
-
-      input.addEventListener("input", () => {
-        error.textContent = "";
-      });
-
-      form.addEventListener("submit", (event) => {
-        event.preventDefault();
-        const result = validateNickname(input.value);
-        if (!result.ok) {
-          error.textContent = result.message;
-          input.focus();
-          return;
-        }
-        setNickname(result.value);
-        location.href = "rooms.html";
-      });
-    </script>
+    <script type="module" src="./landing-page.js"></script>
   </body>
 </html>

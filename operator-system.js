@@ -47,6 +47,8 @@
       flash: document.querySelector("#flash-gadget"),
       smoke: document.querySelector("#smoke-gadget"),
       fragCount: document.querySelector("#frag-count"),
+      flashCount: document.querySelector("#flash-count"),
+      smokeCount: document.querySelector("#smoke-count"),
       charge: document.querySelector("#grenade-charge"),
       chargeName: document.querySelector("#grenade-charge-name"),
       chargeBar: document.querySelector("#grenade-charge-bar"),
@@ -399,7 +401,8 @@
       }
       if (game.now >= swing.lastTrailAt + 0.025) {
         const trailAngle = swing.direction + localAngle;
-        const tip = game.player.pos.clone().add(vector(Math.cos(trailAngle), Math.sin(trailAngle)).multiplyScalar(swing.range * 0.86));
+        // 트레일 끝점은 실제 판정 사거리(swing.range)와 1:1로 일치시킨다.
+        const tip = game.player.pos.clone().add(vector(Math.cos(trailAngle), Math.sin(trailAngle)).multiplyScalar(swing.range));
         if (swing.lastTip) createWorldStrip(swing.lastTip, tip, 7, swing.color, { duration: 0.2, opacity: 0.82 });
         swing.lastTip = tip;
         swing.lastTrailAt = game.now;
@@ -659,6 +662,14 @@
       game.showToast(hits ? `MELEE HIT ×${hits}` : "MELEE SWING");
     };
 
+    // 레일건 사거리 = 현재 카메라 화면(1.25x/1.5x 확대 포함)의 대각선 거리.
+    // 식별 가능한 최대 범위까지 벽을 관통하는 히트스캔을 허용한다.
+    const railgunRange = () => {
+      const halfWidth = (game.camera.right - game.camera.left) / 2;
+      const halfHeight = (game.camera.top - game.camera.bottom) / 2;
+      return Math.hypot(halfWidth, halfHeight);
+    };
+
     const fireRailgun = () => {
       if (game._railNeedsRelease || game.player.reloadUntil > game.now || game.now < game.player.nextShotAt) return;
       if (game.player.ammo <= 0) {
@@ -674,6 +685,7 @@
       }
       if (game.now - game._railChargeStartedAt < 1) return;
 
+      const range = railgunRange();
       game.player.ammo--;
       game.player.shots++;
       game.player.nextShotAt = game.now + 0.35;
@@ -686,7 +698,7 @@
         if (!target.alive) continue;
         const relative = target.pos.clone().sub(game.player.pos);
         const along = relative.x * direction.x + relative.y * direction.y;
-        if (along < 0 || along > 580) continue;
+        if (along < 0 || along > range) continue;
         const perpendicular = Math.abs(relative.x * direction.y - relative.y * direction.x);
         if (perpendicular <= target.radius && along < nearestAlong) {
           nearest = target;
@@ -698,12 +710,13 @@
         game.damageActor(game.player, nearest, 40);
       }
       const beamStart = game.player.pos.clone().add(direction.clone().multiplyScalar(game.player.radius + 10));
-      const beamEnd = game.player.pos.clone().add(direction.clone().multiplyScalar(580));
+      const beamEnd = game.player.pos.clone().add(direction.clone().multiplyScalar(range));
       createWorldStrip(beamStart, beamEnd, 13, 0x55f0b0, { duration: 0.22, opacity: 0.5 });
       createWorldStrip(beamStart, beamEnd, 4, 0xf3ffff, { duration: 0.16, opacity: 1 });
       createRangeRing(game.player, 62, 0x9ef0ff, 0.22, 0.75);
       game.cameraShake = Math.max(game.cameraShake, 8);
       game.canvas.dataset.lastRailBeam = `${Math.round(beamStart.x)}:${Math.round(beamStart.y)}>${Math.round(beamEnd.x)}:${Math.round(beamEnd.y)}`;
+      game.canvas.dataset.railgunRange = String(Math.round(range));
       game.showToast(nearest ? "RAIL HIT // WALLPIERCE" : "RAIL FIRED");
     };
 
@@ -713,10 +726,78 @@
         game.reload(game.player);
         return;
       }
+      // 유탄: 사거리 내 마우스 지정 지점을 착탄점으로 사용한다.
+      // 범위 밖을 조준하면 최대 사거리 지점으로 클램프된다.
+      const launcherRange = game.player.weapon.range || 780;
+      const origin = game.player.pos;
+      const aim = game.mouse.world.clone().sub(origin);
+      if (aim.lengthSq() < 1) aim.set(Math.cos(game.player.dir), Math.sin(game.player.dir));
+      const targetPos = origin.clone().add(
+        aim.clone().normalize().multiplyScalar(Math.min(aim.length(), launcherRange)),
+      );
+
       game.player.ammo--;
       game.player.shots++;
       game.player.nextShotAt = game.now + 60 / game.player.weapon.rpm;
-      createSpecialGrenade("launcher", game.player, game.mouse.world.clone());
+
+      const direction = targetPos.clone().sub(origin).normalize();
+      const pos = origin.clone().add(direction.clone().multiplyScalar(32));
+      const mesh = createEffectMesh(0xffa8f0, 0.32);
+      mesh.position.set(pos.x, pos.y, 18);
+      game.fxGroup.add(mesh);
+      game.grenades.push({
+        id: Date.now() + Math.random(),
+        type: "launcher",
+        owner: game.player,
+        pos,
+        targetPos,
+        speed: 620,
+        directFire: true, // 투척 물리/신관 없이 직선 비행 → 착탄 즉시 폭발
+        mesh,
+      });
+      game.canvas.dataset.lastLauncherShot = `${Math.round(targetPos.x)}:${Math.round(targetPos.y)}`;
+    };
+
+    const originalUpdateGrenades = game.updateGrenades.bind(game);
+    game.updateGrenades = function updateDirectFireGrenades(dt) {
+      // 직사 유탄은 코어의 투척 물리/신관에서 분리해 직접 처리한다.
+      // 코어 실행 전에 꺼냈다가 실행 후 되돌려, 코어가 유탄을 건드리지 않게 한다.
+      const direct = [];
+      for (let index = this.grenades.length - 1; index >= 0; index--) {
+        if (!this.grenades[index].directFire) continue;
+        direct.push(this.grenades.splice(index, 1)[0]);
+      }
+      for (let index = direct.length - 1; index >= 0; index--) {
+        const grenade = direct[index];
+        const toTarget = grenade.targetPos.clone().sub(grenade.pos);
+        const step = grenade.speed * dt;
+        const detonate = (at) => {
+          grenade.pos.copy(at);
+          grenade.mesh.position.set(at.x, at.y, 16);
+          this.explode(grenade);
+          direct.splice(index, 1);
+        };
+        if (toTarget.lengthSq() <= step * step) {
+          detonate(grenade.targetPos);
+          continue;
+        }
+        const move = toTarget.normalize().multiplyScalar(step);
+        const nextX = grenade.pos.clone().add(vector(move.x, 0));
+        const nextY = grenade.pos.clone().add(vector(0, move.y));
+        if (this.collides(nextX, 9)) {
+          detonate(grenade.pos.clone().add(vector(move.x * 0.5, 0)));
+          continue;
+        }
+        grenade.pos.x = nextX.x;
+        if (this.collides(nextY, 9)) {
+          detonate(grenade.pos.clone().add(vector(0, move.y * 0.5)));
+          continue;
+        }
+        grenade.pos.y = nextY.y;
+        grenade.mesh.position.set(grenade.pos.x, grenade.pos.y, 16);
+      }
+      originalUpdateGrenades(dt);
+      for (const grenade of direct) this.grenades.push(grenade);
     };
 
     const originalFire = game.fire.bind(game);
@@ -755,13 +836,24 @@
       }
     };
 
+    const getWasmDir = () => {
+      const x = (game.keys.has("KeyD") ? 1 : 0) - (game.keys.has("KeyA") ? 1 : 0);
+      const y = (game.keys.has("KeyW") ? 1 : 0) - (game.keys.has("KeyS") ? 1 : 0);
+      if (x === 0 && y === 0) return null;
+      return vector(x, y).normalize();
+    };
+
     const startDash = (kind) => {
       const key = `${kind}-dash`;
       if (!abilityReady(key)) {
         game.showToast(`DASH ${cooldownRemaining(key).toFixed(1)}s`);
         return;
       }
-      const target = game.mouse.world.clone().sub(game.player.pos);
+      // 돌진 방향: 현재 누르고 있는 WASD 방향. 입력이 없으면 마지막 이동 방향,
+      // 그것도 없으면 조준(마우스) 방향을 사용한다.
+      const target = getWasmDir()
+        || (game._lastMoveDir ? game._lastMoveDir.clone() : null)
+        || game.mouse.world.clone().sub(game.player.pos);
       if (target.lengthSq() < 1) target.set(Math.cos(game.player.dir), Math.sin(game.player.dir));
       target.normalize();
       beginCooldown(key, SPECIAL_COOLDOWN);
@@ -1019,6 +1111,8 @@
       game.player.hp -= 25;
       game.player.lastDamageAt = game.now;
       beginCooldown("undead", SPECIAL_COOLDOWN);
+      // 해골이 들고 있는 미니 낫: 사신 본체의 낫 텍스처를 복제해 축소한다.
+      const scytheSource = game.player._weaponVisualRoot;
       for (const offset of [-0.55, 0, 0.55]) {
         const preferred = game.player.pos.clone().add(vector(Math.cos(game.player.dir + offset), Math.sin(game.player.dir + offset)).multiplyScalar(44));
         const pos = findFreeSummonSpawn(preferred);
@@ -1030,6 +1124,18 @@
             part.material.color?.setHex(0xc7d0d5);
           }
         });
+        if (scytheSource) {
+          const scythe = scytheSource.clone(true);
+          // 사신 본체 무기가 재구성될 때 공유 자원이 해제되지 않도록
+          // 지오메트리/머티리얼을 복제해 독립시킨다.
+          scythe.traverse((part) => {
+            if (part.geometry) part.geometry = part.geometry.clone();
+            if (part.material && !Array.isArray(part.material)) part.material = part.material.clone();
+          });
+          scythe.position.z = 12;
+          scythe.scale.setScalar(0.9);
+          mesh.add(scythe);
+        }
         mesh.position.set(pos.x, pos.y, 10);
         game.entityGroup.add(mesh);
         game._summons.push({
@@ -1038,6 +1144,9 @@
           hp: 25,
           nextDamageAt: 0,
           expireAt: game.now + 20,
+          swingAt: 0,
+          swingDir: 0,
+          swingTrailAt: 0,
           nav: {
             path: [],
             index: 0,
@@ -1067,12 +1176,30 @@
       game._summons.splice(index, 1);
     }
 
+    const REVEAL_DURATION = 7;
+    const REVEAL_COOLDOWN = 15;
+
+    /** 레이(origin → origin+dir*dist)와 원형 연막의 충돌 거리. 없으면 null. */
+    const smokeRayHit = (origin, direction, distance, center, radius) => {
+      const dx = center.x - origin.x;
+      const dy = center.y - origin.y;
+      const projection = dx * direction.x + dy * direction.y;
+      if (projection < 0) return null;
+      const perpendicular = dx * dx + dy * dy - projection * projection;
+      if (perpendicular > radius * radius) return null;
+      const t = projection - Math.sqrt(radius * radius - perpendicular);
+      return t <= distance ? Math.max(0, t) : null;
+    };
+
     const useReveal = () => {
-      if (!abilityReady("reveal")) return;
-      beginCooldown("reveal", SPECIAL_COOLDOWN);
-      game._revealUntil = game.now + 3;
+      if (!abilityReady("reveal")) {
+        game.showToast(`SCAN ${cooldownRemaining("reveal").toFixed(1)}s`);
+        return;
+      }
+      beginCooldown("reveal", REVEAL_COOLDOWN);
+      game._revealUntil = game.now + REVEAL_DURATION;
       game.visibilityDirty = true;
-      game.showToast("THERMAL VISION // 3.0s");
+      game.showToast(`THERMAL VISION // ${REVEAL_DURATION.toFixed(0)}s`);
     };
 
     const useNinjaSmoke = () => {
@@ -1092,8 +1219,55 @@
       game.showToast("NINJA SMOKE // R225 · 5s");
     };
 
+    const FLASH_SHIELD_RANGE = 260;
+    const FLASH_SHIELD_HALF_ANGLE = Math.PI / 3; // 좌우 60도 (총 120도)
+    const FLASH_SHIELD_DURATION = 1; // 섬광탄과 동일한 1초 시야 차단
+
+    const useFlashShield = () => {
+      if (!abilityReady("flash-shield")) {
+        game.showToast(`FLASH SHIELD ${cooldownRemaining("flash-shield").toFixed(1)}s`);
+        return;
+      }
+      beginCooldown("flash-shield", SPECIAL_COOLDOWN);
+      const direction = getWasmDir()
+        || (game._lastMoveDir ? game._lastMoveDir.clone() : null)
+        || vector(Math.cos(game.player.dir), Math.sin(game.player.dir));
+      direction.normalize();
+
+      let hits = 0;
+      for (const target of game.bots) {
+        if (!target.alive) continue;
+        const relative = target.pos.clone().sub(game.player.pos);
+        const distance = relative.length();
+        if (distance > FLASH_SHIELD_RANGE) continue;
+        if (Math.abs(angleDelta(Math.atan2(relative.y, relative.x), Math.atan2(direction.y, direction.x))) > FLASH_SHIELD_HALF_ANGLE) continue;
+        target.flashedUntil = Math.max(target.flashedUntil, game.now + FLASH_SHIELD_DURATION);
+        target.hadVisual = false;
+        hits++;
+      }
+      game.visibilityDirty = true;
+      game.cameraShake = Math.max(game.cameraShake, 3);
+
+      // 시각 이펙트: 넓은 부채꼴 번쩍임 + 밝은 코어 버스트
+      createRangeSector(game.player, Math.atan2(direction.y, direction.x), FLASH_SHIELD_RANGE, FLASH_SHIELD_HALF_ANGLE, 0xffe67d);
+      for (let index = 0; index < 16; index++) {
+        const angle = index / 16 * Math.PI * 2;
+        const dir = vector(Math.cos(angle), Math.sin(angle));
+        createWorldStrip(
+          game.player.pos.clone().add(dir.clone().multiplyScalar(6)),
+          game.player.pos.clone().add(dir.multiplyScalar(index % 2 ? 70 : 130)),
+          index % 2 ? 2.4 : 5,
+          index % 3 ? 0xffe67d : 0xffffff,
+          { duration: 0.22, opacity: 0.95 },
+        );
+      }
+      game.canvas.dataset.lastFlashShield = `${Math.round(game.now * 100) / 100}:hits=${hits}`;
+      game.showToast(hits ? `FLASH SHIELD ×${hits}` : "FLASH SHIELD");
+    };
+
     const useAbility = () => {
       if (isOperator("sentinel")) useReveal();
+      else if (isOperator("bulwark")) useFlashShield();
       else if (isOperator("reaper")) summonUndead();
       else if (isOperator("hunter")) startDash("hunter");
       else if (isOperator("ninja")) useNinjaSmoke();
@@ -1153,6 +1327,9 @@
 
     const originalUpdatePlayer = game.updatePlayer.bind(game);
     game.updatePlayer = function updateOperatorPlayer(dt) {
+      // 마지막 이동 방향 추적 (돌진 방향 fallback 용)
+      const lastMove = getWasmDir();
+      if (lastMove) this._lastMoveDir = lastMove.clone();
       const dash = this._operatorDash;
       if (!dash) {
         originalUpdatePlayer(dt);
@@ -1187,7 +1364,8 @@
           piece.userData.breachlineGunSide = side;
           piece.position.x = side * 17;
           piece.position.y = index < 2 ? 5 : -2;
-          piece.rotation.z = -side * Math.PI / 2;
+          // asset-visuals 의 건카타 자세와 동일: 왼손 0°, 오른손 180° (양 방향)
+          piece.rotation.z = side < 0 ? 0 : Math.PI;
         }
         if (this.now >= dash.nextFxAt) {
           dash.nextFxAt = this.now + 0.045;
@@ -1240,6 +1418,17 @@
         const clampedAngle = this.player.dir + clamp(angleDelta(angle, this.player.dir), -halfView, halfView);
         adjustedDirection = vector(Math.cos(clampedAngle), Math.sin(clampedAngle));
       }
+      // RB-08 투시 스캔 중에는 시야 부채꼴이 벽에 잘리지 않게 한다.
+      // 연막 차단은 유지한다.
+      if (isOperator("sentinel") && this._revealUntil > this.now && origin.distanceToSquared(this.player.pos) < 1) {
+        let range = distance;
+        for (const smoke of this.smokes) {
+          if (smoke.endAt <= this.now) continue;
+          const hit = smokeRayHit(origin, adjustedDirection, distance, smoke.pos, smoke.radius);
+          if (hit !== null && hit < range) range = hit;
+        }
+        return origin.clone().add(adjustedDirection.clone().multiplyScalar(range));
+      }
       return originalTraceVision(origin, adjustedDirection, isOperator("sniper") ? distance * 1.5 : distance);
     };
 
@@ -1265,6 +1454,11 @@
           if (game.now >= summon.nextDamageAt) {
             game.damageActor(game.player, target, 10);
             summon.nextDamageAt = game.now + 1;
+            // 사신과 동일한 근접 연출: 휘두르기 + 부채꼴 + 트레일
+            summon.swingAt = game.now;
+            summon.swingDir = Math.atan2(delta.y, delta.x);
+            summon.swingTrailAt = 0;
+            createRangeSector(summon.pos, summon.swingDir, 38, 0.9, 0xc59bff);
           }
         } else {
           const nav = summon.nav;
@@ -1323,7 +1517,23 @@
           }
         }
         summon.mesh.position.set(summon.pos.x, summon.pos.y, 10);
-        summon.mesh.rotation.z = Math.atan2(delta.y, delta.x);
+        // 휘두르기 중에는 낫이 부채꼴을 그리며 스윙한다.
+        let facingAngle = Math.atan2(delta.y, delta.x);
+        if (summon.swingAt && game.now - summon.swingAt < 0.32) {
+          const progress = (game.now - summon.swingAt) / 0.32;
+          const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          facingAngle += -0.7 + eased * 1.4;
+          if (game.now >= summon.swingTrailAt) {
+            summon.swingTrailAt = game.now + 0.03;
+            const tip = summon.pos.clone().add(
+              vector(Math.cos(summon.swingDir), Math.sin(summon.swingDir)).multiplyScalar(38),
+            );
+            createWorldStrip(summon.pos.clone(), tip, 5, 0xc59bff, { duration: 0.18, opacity: 0.72 });
+          }
+        } else {
+          summon.swingAt = 0;
+        }
+        summon.mesh.rotation.z = facingAngle;
       }
       game.canvas.dataset.undeadCount = String(game._summons.length);
       game.canvas.dataset.undeadPathNodes = game._summons.map((summon) => Math.max(0, summon.nav.path.length - summon.nav.index)).join(",");
@@ -1335,6 +1545,10 @@
       for (const actor of [this.player, ...this.bots]) {
         if (!actor.alive || actor.hp >= (actor.maxHp || 100) || this.now - (actor.lastDamageAt ?? -Infinity) < 5) continue;
         actor.hp = Math.min(actor.maxHp || 100, actor.hp + 5 * dt);
+      }
+      // RB-08 투시 스캔 활성 중 식별 링 점멸 — 주변에서 능력 상태를 알 수 있게 한다.
+      if (isOperator("sentinel") && this.player.alive && this._revealUntil > this.now) {
+        this.player.ring.material.color.setHex(Math.sin(this.now * 11) > 0 ? 0xff3b45 : 0xffffff);
       }
       updateSummons(dt);
       updateOperatorFx();
@@ -1355,8 +1569,8 @@
         ui.reserve.textContent = "∞";
       }
       ui.fragCount.textContent = `${this.player.fragGrenades || 0}`;
-      document.querySelector("#flash-count").textContent = `${this.player.flashGrenades || 0}`;
-      document.querySelector("#smoke-count").textContent = `${this.player.smokeGrenades || 0}`;
+      ui.flashCount.textContent = `${this.player.flashGrenades || 0}`;
+      ui.smokeCount.textContent = `${this.player.smokeGrenades || 0}`;
       updateGadgetVisibility();
 
       const secondary = selected.controls.secondary;
@@ -1370,6 +1584,7 @@
         secondaryCooldown = cooldownRemaining("daggers");
         abilityCooldown = cooldownRemaining("ninja-smoke");
       } else if (selected.id === "sentinel") abilityCooldown = cooldownRemaining("reveal");
+      else if (selected.id === "bulwark") abilityCooldown = cooldownRemaining("flash-shield");
       else if (selected.id === "frog") abilityCooldown = this.getTongueCooldown?.() || 0;
       const cooldown = Math.max(secondaryCooldown, abilityCooldown);
       const secondaryStatus = secondaryCooldown > 0 ? ` ${secondaryCooldown.toFixed(1)}s` : "";

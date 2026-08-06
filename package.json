@@ -1,0 +1,26 @@
+{
+  "name": "jungle4sprint1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "asset-visuals.js",
+  "scripts": {
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Frogyyh/jungle4sprint1.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Frogyyh/jungle4sprint1/issues"
+  },
+  "homepage": "https://github.com/Frogyyh/jungle4sprint1#readme",
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "ws": "^8.21.2"
+  }
+}

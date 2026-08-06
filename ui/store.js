@@ -10,7 +10,6 @@ const JOINED_KEY = "breachline.joinedRoom";
 export const NICKNAME_MIN = 2;
 export const NICKNAME_MAX = 12;
 export const TEAMS = ["A", "B"];
-export const TEAM_SIZE = 2; // 2 vs 2
 
 /* ---------------- 닉네임 ---------------- */
 
@@ -282,8 +281,7 @@ export const CONTROLS = [
   ["좌클릭", "기본 공격"],
   ["우클릭", "특수 공격"],
   ["SPACE", "특수 능력"],
-  ["2 / 3 / 4", "군인 수류탄 / 섬광탄 / 연막탄"],
-  ["휠", "시야 배율"],
+  ["2", "군인 섬광탄"],
   ["R", "재장전"],
 ];
 

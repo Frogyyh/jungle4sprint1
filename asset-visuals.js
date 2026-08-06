@@ -22,7 +22,7 @@
     const characterOffsets = Object.freeze({
       // The source frame includes a left-side coat/scarf flourish. Shift the
       // painted body back over the gameplay origin without changing hitboxes.
-      gunslinger: Object.freeze({ x: -2.4, y: 0 }),
+      gunslinger: Object.freeze({ x: -3.6, y: 0 }),
     });
     const teamOutlineColors = Object.freeze({
       player: 0x3b9dff,
@@ -43,8 +43,10 @@
         { texture: "pistol-r.png", x: 7, y: 25, width: 25, height: 15, rotation: Math.PI / 2, gunSide: 1 },
       ],
       shield_pistol: [
-        { texture: "shield.png", x: -10, y: 24, width: 42, height: 52, rotation: Math.PI / 2, hand: "left" },
-        { texture: "pistol-r.png", x: 14, y: 34, width: 23, height: 14, rotation: Math.PI / 2, hand: "right" },
+        // 방패는 왼손(x-)에, 권총은 방패 왼쪽(x- 쪽)에 배치해 한쪽으로 모인
+        // 실루엣이 보이도록 한다. 방패는 반시계방향 90도 회전된 상태.
+        { texture: "shield.png", x: -8, y: 24, width: 42, height: 52, rotation: Math.PI / 2, hand: "left" },
+        { texture: "pistol-r.png", x: -19, y: 36, width: 23, height: 14, rotation: Math.PI / 2, hand: "right" },
       ],
       railgun: [
         { texture: "railgun.png", x: 0, y: 33, width: 55, height: 25, rotation: Math.PI / 2 },
@@ -358,8 +360,10 @@
             piece.material.map = pistolLeftTexture;
             piece.material.needsUpdate = true;
           }
-          // Two copies of PistolL are held away from the body during the spin.
-          piece.rotation.z = -side * Math.PI / 2;
+          // Two copies of PistolL are held away from the body during the spin:
+          // 왼손 총은 전방(0°), 오른손 총은 180° 회전해 두 총구가 서로 반대
+          // 방향(양 방향)을 향한다.
+          piece.rotation.z = side < 0 ? 0 : Math.PI;
         }
       } else if (actor._gunKataAssetPose) {
         for (const piece of pieces) {
