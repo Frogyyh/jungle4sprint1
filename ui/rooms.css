@@ -20,18 +20,27 @@ body {
   background: #040d14b3;
 }
 
+/* 사이드바 폭이 260px 이라 긴 제목은 자간을 좁히고 LOBBY 는 아래로 넘긴다. */
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   font-size: 12px;
   font-weight: 900;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.06em;
 }
 
 .brand-mark {
   color: var(--cyan);
   font-size: 18px;
+}
+
+.brand-logo {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
 }
 
 .brand small {

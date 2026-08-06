@@ -68,6 +68,129 @@ h1 span {
   color: var(--cyan);
 }
 
+/* 제목 앞 로고 — 글자 크기를 따라간다. */
+.title-logo {
+  height: 1em;
+  width: auto;
+  margin-right: 0.22em;
+  vertical-align: -0.16em;
+  filter: drop-shadow(0 6px 18px #6de6df40);
+}
+
+/* ---------- 전술 워드마크 ----------
+   로고 옆 제목을 HUD 각인처럼 보이게 한다.
+   왼쪽 시안 기둥 · 모서리 브래킷 · 글자를 가로지르는 스텐실 컷.
+   컷은 글자를 마스크로 잘라내 배경이 그대로 비치게 만든 것이라
+   배경색이 바뀌어도 따로 맞출 필요가 없다. */
+
+.tactical-title {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.17em;
+  padding-left: 0.28em;
+}
+
+/* 왼쪽 끝 기둥 — HUD 패널 표식과 같은 어휘 */
+.tactical-title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.1em;
+  bottom: 0.12em;
+  width: 3px;
+  background: linear-gradient(180deg, var(--cyan), #6de6df00);
+}
+
+.tactical-title .title-logo {
+  margin-right: 0;
+  vertical-align: baseline;
+}
+
+.wordmark {
+  position: relative;
+  display: inline-block;
+  padding: 0.08em 0.16em 0.06em;
+}
+
+/* 컷은 글자에만 건다 — 마스크는 자식·의사요소까지 함께 잘라내기 때문에
+   브래킷(.wordmark::before/after)과 층을 나눠 둔다. */
+.wordmark-cut {
+  display: inline-block;
+  color: var(--ink);
+  text-shadow: 0 0 0.3em #6de6df2e;
+  /* 스텐실 컷 — 글자 높이에 비례해 항상 같은 밀도로 잘린다. */
+  -webkit-mask-image: repeating-linear-gradient(
+    180deg,
+    #000 0 0.105em,
+    transparent 0.105em 0.118em
+  );
+  mask-image: repeating-linear-gradient(
+    180deg,
+    #000 0 0.105em,
+    transparent 0.105em 0.118em
+  );
+}
+
+.wordmark-cut b {
+  color: var(--cyan);
+  font-weight: inherit;
+}
+
+/* 모서리 브래킷 — 조준 표식처럼 위아래를 물어준다. */
+.wordmark::before,
+.wordmark::after {
+  content: "";
+  position: absolute;
+  width: 0.22em;
+  height: 0.22em;
+  border: 2px solid var(--cyan);
+  opacity: 0.75;
+}
+
+.wordmark::before {
+  left: 0;
+  top: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.wordmark::after {
+  right: 0;
+  bottom: 0;
+  border-left: 0;
+  border-top: 0;
+}
+
+/* 제목 아래 계기판 한 줄 */
+.title-slate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding-left: 0.3em;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+
+.title-slate i {
+  width: 4px;
+  height: 4px;
+  background: var(--cyan);
+  opacity: 0.7;
+  transform: rotate(45deg);
+}
+
+/* 컷·브래킷은 장식이라 모션·대비 설정을 존중한다. */
+@media (prefers-contrast: more) {
+  .wordmark-cut {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
 .subtitle {
   margin: 11px 0 0;
   color: var(--muted);
@@ -156,6 +279,27 @@ h1 span {
   background: #6de6df1f;
 }
 
+/* 되돌릴 수 없는 동작(내보내기 등)의 확인 버튼 */
+.danger-button {
+  border: 1px solid var(--red);
+  padding: 11px 18px;
+  color: var(--red);
+  background: #ff4d5f14;
+  font-family: inherit;
+  font-weight: 900;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.danger-button:hover,
+.danger-button:focus-visible {
+  color: #0b1116;
+  background: var(--red);
+  outline: none;
+}
+
 /* ---------- 입력 ---------- */
 
 .field {
@@ -224,9 +368,10 @@ h1 span {
   display: grid;
   place-items: center;
   padding: 20px;
-  background: #02060acc;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
+  /* 뒤를 가리지 않는다 — 살짝만 어둡게 하고 흐림으로 뒤로 물린다. */
+  background: #02060a59;
+  -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px);
   z-index: var(--z-modal);
 }
 

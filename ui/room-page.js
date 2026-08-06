@@ -133,13 +133,7 @@ function renderSlots(room) {
         kick.type = "button";
         kick.className = "slot-kick hidden";
         kick.textContent = "내보내기";
-        kick.addEventListener("click", () => {
-          if (!confirm(`${m.name} 님을 내보낼까요?`)) return;
-          if (kickMember(roomId, me, m.name)) {
-            render();
-            toast(`${m.name} 을(를) 내보냈습니다.`);
-          }
-        });
+        kick.addEventListener("click", () => askKick(m.name));
         slot.appendChild(kick);
 
         let holdTimer = null;
@@ -177,11 +171,7 @@ function renderSlots(room) {
           );
           return;
         }
-        if (!confirm(`${m.name} 님을 내보낼까요?`)) return;
-        if (kickMember(roomId, me, m.name)) {
-          render();
-          toast(`${m.name} 을(를) 내보냈습니다.`);
-        }
+        askKick(m.name);
       });
 
       box.appendChild(slot);
@@ -302,6 +292,39 @@ el("action-button").addEventListener("click", () => {
   const mine = findMember(room, me);
   setReady(roomId, me, !mine.ready);
   render();
+});
+
+/* ---------------- 내보내기 확인 팝업 ---------------- */
+
+const kickModal = el("kick-modal");
+let kickTarget = null;
+
+/* confirm() 대신 화면 가운데 팝업으로 묻는다. */
+function askKick(name) {
+  kickTarget = name;
+  // 닉네임은 사용자가 지은 문자열이라 텍스트 노드로 넣는다.
+  const who = document.createElement("span");
+  who.className = "kick-name";
+  who.textContent = name;
+  el("kick-message").replaceChildren(who, " 님을 정말 내보내겠습니까?");
+  kickModal.classList.remove("hidden");
+  el("kick-confirm").focus();
+}
+
+function closeKickModal() {
+  kickTarget = null;
+  kickModal.classList.add("hidden");
+}
+
+el("kick-cancel").addEventListener("click", closeKickModal);
+
+el("kick-confirm").addEventListener("click", () => {
+  const name = kickTarget;
+  closeKickModal();
+  if (name && kickMember(roomId, me, name)) {
+    render();
+    toast(`${name} 을(를) 내보냈습니다.`);
+  }
 });
 
 /* ---------------- 캐릭터 선택 팝업 ---------------- */
@@ -454,9 +477,12 @@ el("map-choices").addEventListener("click", (event) => {
 el("map-cancel").addEventListener("click", () => mapModal.classList.add("hidden"));
 
 /* 배경 클릭 · Esc 로 팝업 닫기 */
-for (const modal of [charModal, mapModal]) {
+for (const modal of [charModal, mapModal, kickModal]) {
   modal.addEventListener("click", (event) => {
-    if (event.target === modal) modal.classList.add("hidden");
+    if (event.target === modal) {
+      if (modal === kickModal) closeKickModal();
+      else modal.classList.add("hidden");
+    }
   });
 }
 
@@ -464,6 +490,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   charModal.classList.add("hidden");
   mapModal.classList.add("hidden");
+  closeKickModal();
 });
 
 render();

@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07111c" />
-    <title>Project2 — Breachline</title>
+    <title>Visual Shooting Code</title>
+    <link rel="icon" href="./Asset/logo.png" />
     <script src="./operators.js"></script>
     <script type="module" src="./game.js"></script>
     <link rel="stylesheet" href="./styles.css" />
@@ -12,11 +13,11 @@
   </head>
   <body>
     <div id="game-shell">
-      <canvas id="game-canvas" aria-label="Breachline game canvas"></canvas>
+      <canvas id="game-canvas" aria-label="Visual Shooting Code game canvas"></canvas>
 
       <div id="hud" class="hud hidden" aria-live="polite">
         <div class="hud-top">
-          <div class="brand"><span class="brand-mark">✦</span><span>BREACHLINE</span><small>PROTOTYPE</small></div>
+          <div class="brand"><img class="brand-logo" src="./Asset/logo.png" alt="" /><span>Visual Shooting Code</span><small>PROTOTYPE</small></div>
           <div class="round-readout"><span id="timer">03:00</span><span class="dot">•</span><span id="enemies">5 HOSTILES</span></div>
         </div>
         <div class="hud-bottom">
@@ -51,8 +52,8 @@
       <div id="crosshair" class="crosshair hidden"><span></span></div>
 
       <section id="loadout" class="screen-card">
-        <div class="eyebrow">OPERATION // NIGHTFALL</div>
-        <h1>BREACH<span>LINE</span></h1>
+        <div class="eyebrow">Visual Shooting Code</div>
+        <h1><img class="title-logo" src="./Asset/logo.png" alt="" />vs<span>code</span></h1>
         <p class="subtitle">Top-down tactical shooter prototype</p>
         <p class="briefing">좌측 스폰에서 진입해 반대편의 적 5명을 제거하십시오. 좁은 시야와 중앙 엄폐물을 관리하고, 투척물로 다음 교전 각도를 만드세요.</p>
         <div id="operator-loadout-grid" class="loadout-grid operator-loadout-grid"></div>

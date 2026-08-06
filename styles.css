@@ -173,3 +173,18 @@
 @media(prefers-reduced-motion:reduce){
   .smoke-status.active,.smoke-status:before,.smoke-overlay.active:before,.smoke-overlay.active:after{animation:none}
 }
+
+/* ---------- 제목 · 로고 (Visual Shooting Code) ---------- */
+.title-logo{
+  height:1em;
+  width:auto;
+  margin-right:.22em;
+  vertical-align:-.16em;
+  filter:drop-shadow(0 6px 18px #6de6df40);
+}
+/* HUD 좌상단 브랜드 */
+.brand{letter-spacing:.08em}
+.brand-logo{flex:none;width:20px;height:20px;object-fit:contain}
+@media(max-width:620px){
+  .brand-logo{width:16px;height:16px}
+}

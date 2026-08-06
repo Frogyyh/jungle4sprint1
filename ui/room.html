@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07111c" />
-    <title>BREACHLINE — 방</title>
+    <title>Visual Shooting Code — 방</title>
+    <link rel="icon" href="../Asset/logo.png" />
     <link rel="stylesheet" href="ui.css" />
     <link rel="stylesheet" href="room.css" />
   </head>
@@ -108,6 +109,19 @@
         <div id="map-choices" class="map-choices"></div>
         <div class="modal-actions">
           <button id="map-cancel" class="ghost-button" type="button">닫기</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 내보내기 확인 팝업 -->
+    <div id="kick-modal" class="modal-backdrop hidden">
+      <section class="screen-card kick-modal">
+        <div class="eyebrow">KICK PLAYER</div>
+        <h2 id="kick-message">님을 정말 내보내겠습니까?</h2>
+        <p class="kick-note">내보낸 참여자는 다시 참여할 수 있습니다.</p>
+        <div class="modal-actions">
+          <button id="kick-confirm" class="danger-button" type="button">내보내기</button>
+          <button id="kick-cancel" class="ghost-button" type="button">취소</button>
         </div>
       </section>
     </div>
