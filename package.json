@@ -5,7 +5,11 @@
   "main": "asset-visuals.js",
   "scripts": {
     "lint": "eslint . --max-warnings 0",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "build:cloudflare": "node scripts/build-public.mjs",
+    "test:multiplayer": "node scripts/test-multiplayer.mjs",
+    "dev:cloudflare": "npm run build:cloudflare && wrangler dev",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy"
   },
   "repository": {
     "type": "git",
@@ -21,6 +25,7 @@
   "homepage": "https://github.com/Frogyyh/jungle4sprint1#readme",
   "devDependencies": {
     "eslint": "^9.39.5",
-    "ws": "^8.21.2"
+    "ws": "^8.21.2",
+    "wrangler": "^4.30.0"
   }
 }

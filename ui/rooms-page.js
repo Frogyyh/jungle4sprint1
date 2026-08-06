@@ -1,265 +1,145 @@
-/* ui/rooms-page.js — ui/rooms.html 방 목록 화면 로직 */
-import {
-  CONTROLS,
-  checkPassword,
-  createRoom,
-  findRoom,
-  hasPassword,
-  joinRoom,
-  loadRooms,
-  playerCount,
-  requireNickname,
-  toast,
-  validatePassword,
-} from "./store.js";
+import { CONTROLS, requireNickname, toast, validatePassword } from "./store.js";
+import { createOnlineRoom, joinOnlineRoom, listRooms } from "./multiplayer-api.js";
 
 const nickname = requireNickname();
-if (nickname) {
-  document.getElementById("my-nickname").textContent = nickname;
-}
+if (!nickname) throw new Error("닉네임이 필요합니다.");
+document.getElementById("my-nickname").textContent = nickname;
 
 const controlsList = document.getElementById("controls-list");
 for (const [key, action] of CONTROLS) {
   const li = document.createElement("li");
-  const b = document.createElement("b");
-  b.textContent = key;
-  const span = document.createElement("span");
-  span.textContent = action;
-  li.append(b, span);
+  li.innerHTML = `<b></b><span></span>`;
+  li.querySelector("b").textContent = key;
+  li.querySelector("span").textContent = action;
   controlsList.appendChild(li);
 }
 
 const listEl = document.getElementById("room-list");
 const countEl = document.getElementById("room-count");
+let rooms = [];
+let pendingRoomId = null;
 
 function render() {
-  const rooms = loadRooms();
   countEl.textContent = rooms.length;
   listEl.innerHTML = "";
-
-  if (rooms.length === 0) {
+  if (!rooms.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.innerHTML =
-      '<div class="mark">✦</div><div>열려 있는 방이 없습니다<br />왼쪽 아래에서 방을 만들어 보세요</div>';
+    empty.innerHTML = '<div class="mark">◎</div><div>열려 있는 방이 없습니다.<br />새 방을 만들어 보세요.</div>';
     listEl.appendChild(empty);
     return;
   }
-
   for (const room of rooms) {
-    const players = playerCount(room);
-    const full = players >= room.capacity;
+    const full = room.playerCount >= room.capacity || room.status !== "lobby";
     const row = document.createElement("button");
     row.type = "button";
     row.className = full ? "room-row full" : "room-row";
     row.dataset.id = room.id;
-    if (full) row.disabled = true;
-
+    row.disabled = full;
     const title = document.createElement("div");
     title.className = "title";
-    if (hasPassword(room)) {
+    if (room.locked) {
       const lock = document.createElement("span");
-      lock.className = "lock";
-      lock.textContent = "🔒";
-      lock.title = "비밀번호가 있는 방";
-      title.appendChild(lock);
+      lock.className = "lock"; lock.textContent = "🔒"; title.appendChild(lock);
     }
     const name = document.createElement("span");
-    name.className = "room-title";
-    name.textContent = room.title;
+    name.className = "room-title"; name.textContent = room.title;
     const join = document.createElement("span");
-    join.className = "join-label";
-    join.textContent = hasPassword(room) ? "🔒 방 참여하기" : "▶ 방 참여하기";
+    join.className = "join-label"; join.textContent = full ? "게임 중 / 참가 불가" : "방 참가하기";
     title.append(name, join);
-
     const host = document.createElement("div");
-    host.className = "host";
-    host.innerHTML = "방장 <b></b>";
-    host.querySelector("b").textContent = room.host;
-
+    host.className = "host"; host.innerHTML = "방장 <b></b>"; host.querySelector("b").textContent = room.host;
     const count = document.createElement("div");
-    count.className = "count";
-    count.innerHTML =
-      '<span class="now"></span><span class="slash">/</span><span class="cap"></span>';
-    count.querySelector(".now").textContent = players;
-    count.querySelector(".cap").textContent = room.capacity;
-
+    count.className = "count"; count.textContent = `${room.playerCount} / ${room.capacity}`;
     row.append(title, host, count);
     listEl.appendChild(row);
   }
 }
 
-/** 참여 처리. 잠긴 방이면 비밀번호를 먼저 확인한다. */
-function enterRoom(roomId) {
-  const room = joinRoom(roomId, nickname);
-  if (!room) {
-    toast("정원이 가득 찬 방입니다.");
+async function refresh(showToast = false) {
+  try {
+    rooms = await listRooms();
     render();
-    return;
+    if (showToast) toast("온라인 방 목록을 새로고침했습니다.");
+  } catch (error) {
+    toast(`서버 연결 실패: ${error.message}`, 4000);
   }
-  location.href = `room.html?id=${encodeURIComponent(room.id)}`;
+}
+
+async function enterRoom(roomId, password = "") {
+  try {
+    await joinOnlineRoom(roomId, { nickname, password });
+    location.href = `room.html?id=${encodeURIComponent(roomId)}`;
+  } catch (error) {
+    toast(error.message, 3500);
+    await refresh();
+  }
 }
 
 listEl.addEventListener("click", (event) => {
   const row = event.target.closest(".room-row");
   if (!row || row.disabled) return;
-
-  const room = findRoom(row.dataset.id);
-  if (!room) {
-    render();
-    return;
-  }
-  if (hasPassword(room)) {
-    openPasswordModal(room);
-    return;
-  }
-  enterRoom(room.id);
+  const room = rooms.find((item) => item.id === row.dataset.id);
+  if (!room) return refresh();
+  if (room.locked) {
+    pendingRoomId = room.id;
+    document.getElementById("pw-room-title").textContent = room.title;
+    document.getElementById("pw-input").value = "";
+    document.getElementById("pw-error").textContent = "";
+    document.getElementById("pw-modal").classList.remove("hidden");
+    document.getElementById("pw-input").focus();
+  } else enterRoom(room.id);
 });
 
-document.getElementById("refresh").addEventListener("click", () => {
-  render();
-  toast("방 목록을 새로고침했습니다.");
-});
-
-document.getElementById("change-nickname").addEventListener("click", () => {
-  location.href = "index.html";
-});
-
-/* ---------- 방 만들기 모달 ---------- */
+document.getElementById("refresh").addEventListener("click", () => refresh(true));
+document.getElementById("change-nickname").addEventListener("click", () => { location.href = "index.html"; });
 
 const modal = document.getElementById("create-modal");
-const createForm = document.getElementById("create-form");
+const form = document.getElementById("create-form");
 const titleInput = document.getElementById("room-title");
-const createError = document.getElementById("create-error");
 const passwordInput = document.getElementById("room-password");
 const capacityGroup = document.getElementById("room-capacity");
-
-/** 숫자만 남긴다. */
-const digitsOnly = (input) => {
-  input.value = input.value.replace(/\D/g, "").slice(0, 4);
-};
-
-function openModal() {
-  modal.classList.remove("hidden");
-  createError.textContent = "";
-  titleInput.value = "";
-  passwordInput.value = "";
-  titleInput.focus();
-}
-
-function closeModal() {
-  modal.classList.add("hidden");
-}
-
-document.getElementById("create-room").addEventListener("click", openModal);
-document.getElementById("create-cancel").addEventListener("click", closeModal);
-
-modal.addEventListener("click", (event) => {
-  if (event.target === modal) closeModal();
+const closeCreate = () => modal.classList.add("hidden");
+document.getElementById("create-room").addEventListener("click", () => {
+  modal.classList.remove("hidden"); titleInput.value = ""; passwordInput.value = ""; titleInput.focus();
 });
-
-document.addEventListener("keydown", (event) => {
-  if (event.key !== "Escape") return;
-  closeModal();
-  closePasswordModal();
-});
-
+document.getElementById("create-cancel").addEventListener("click", closeCreate);
 capacityGroup.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-capacity]");
   if (!button) return;
-  for (const b of capacityGroup.children) b.classList.remove("selected");
-  button.classList.add("selected");
+  [...capacityGroup.children].forEach((item) => item.classList.toggle("selected", item === button));
 });
-
-titleInput.addEventListener("input", () => {
-  createError.textContent = "";
-});
-
-passwordInput.addEventListener("input", () => {
-  digitsOnly(passwordInput);
-  createError.textContent = "";
-});
-
-createForm.addEventListener("submit", (event) => {
+for (const input of [passwordInput, document.getElementById("pw-input")]) {
+  input.addEventListener("input", () => { input.value = input.value.replace(/\D/g, "").slice(0, 4); });
+}
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const title = titleInput.value.trim();
-  if (!title) {
-    createError.textContent = "방 제목을 입력하세요.";
-    titleInput.focus();
-    return;
-  }
-  // 비워두면 공개방, 적으면 숫자 4자리여야 한다.
   const password = validatePassword(passwordInput.value);
-  if (!password.ok) {
-    createError.textContent = password.message;
-    passwordInput.focus();
-    return;
-  }
-  const capacity = Number(
-    capacityGroup.querySelector(".selected").dataset.capacity
-  );
-  const room = createRoom({
-    title,
-    host: nickname,
-    capacity,
-    password: password.value,
-  });
-  closeModal();
-  // 방을 만든 사람은 곧바로 방 안(방장)으로 들어간다.
-  joinRoom(room.id, nickname);
-  location.href = `room.html?id=${encodeURIComponent(room.id)}`;
+  const error = document.getElementById("create-error");
+  if (!title) return void (error.textContent = "방 제목을 입력하세요.");
+  if (!password.ok) return void (error.textContent = password.message);
+  try {
+    const capacity = Number(capacityGroup.querySelector(".selected").dataset.capacity);
+    const room = await createOnlineRoom({ title, nickname, capacity, password: password.value });
+    location.href = `room.html?id=${encodeURIComponent(room.id)}`;
+  } catch (reason) { error.textContent = reason.message; }
 });
-
-/* ---------- 잠긴 방 비밀번호 입력 ---------- */
 
 const pwModal = document.getElementById("pw-modal");
-const pwForm = document.getElementById("pw-form");
-const pwInput = document.getElementById("pw-input");
-const pwError = document.getElementById("pw-error");
-let pendingRoomId = null;
-
-function openPasswordModal(room) {
-  pendingRoomId = room.id;
-  document.getElementById("pw-room-title").textContent = room.title;
-  pwInput.value = "";
-  pwError.textContent = "";
-  pwModal.classList.remove("hidden");
-  pwInput.focus();
-}
-
-function closePasswordModal() {
-  pwModal.classList.add("hidden");
-  pendingRoomId = null;
-}
-
-pwInput.addEventListener("input", () => {
-  digitsOnly(pwInput);
-  pwError.textContent = "";
-});
-
-pwForm.addEventListener("submit", (event) => {
+const closePassword = () => { pwModal.classList.add("hidden"); pendingRoomId = null; };
+document.getElementById("pw-cancel").addEventListener("click", closePassword);
+document.getElementById("pw-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  const room = findRoom(pendingRoomId);
-  if (!room) {
-    closePasswordModal();
-    render();
-    return;
-  }
-  if (!checkPassword(room, pwInput.value)) {
-    pwError.textContent = "비밀번호가 맞지 않습니다.";
-    pwInput.value = "";
-    pwInput.focus();
-    return;
-  }
-  const id = room.id;
-  closePasswordModal();
-  enterRoom(id);
+  const id = pendingRoomId; const password = document.getElementById("pw-input").value;
+  closePassword(); if (id) enterRoom(id, password);
+});
+for (const backdrop of [modal, pwModal]) backdrop.addEventListener("click", (event) => {
+  if (event.target === backdrop) backdrop.classList.add("hidden");
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") { closeCreate(); closePassword(); }
 });
 
-document.getElementById("pw-cancel").addEventListener("click", closePasswordModal);
-
-pwModal.addEventListener("click", (event) => {
-  if (event.target === pwModal) closePasswordModal();
-});
-
-render();
+refresh();
+setInterval(refresh, 5000);

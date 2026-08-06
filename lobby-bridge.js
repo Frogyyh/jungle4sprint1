@@ -1,6 +1,7 @@
 (() => {
   const params = new URLSearchParams(location.search);
-  const launchedFromLobby = params.get("lobby") === "1";
+  const multiplayer = params.get("multiplayer") === "1";
+  const launchedFromLobby = params.get("lobby") === "1" || multiplayer;
   const characterId = window.resolveBreachlineOperatorId(params.get("character") || "soldier");
   const nickname = params.get("nickname") || "PLAYER";
   const mapId = params.get("map") || "crossroads";
@@ -19,7 +20,7 @@
     result.appendChild(button);
   }
 
-  function install() {
+  async function install() {
     const game = window.__breachline;
     if (!game) {
       requestAnimationFrame(install);
@@ -31,6 +32,14 @@
     document.body.dataset.lobbyMap = mapId;
     if (!launchedFromLobby) return;
 
+    if (multiplayer) {
+      try {
+        await window.__multiplayer?.ready;
+      } catch (error) {
+        game.showToast(error.message || "MULTIPLAYER CONNECTION FAILED");
+        return;
+      }
+    }
     game.selectedOperatorId = operator.id;
     game.selectedWeapon = operator.baseWeapon;
     document.querySelectorAll("[data-operator]").forEach((card) => {

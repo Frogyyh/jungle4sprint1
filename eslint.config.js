@@ -34,7 +34,25 @@ module.exports = [
       "node_modules/**",
       "Backups/**",
       "Asset/**",
+      "public/**",
+      ".pnpm-store/**",
+      ".wrangler/**",
     ],
+  },
+  {
+    files: ["**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: {
+        ...globals.node,
+        DurableObject: "readonly",
+        WebSocketPair: "readonly",
+        WebSocketRequestResponsePair: "readonly",
+        WebSocket: "readonly",
+      },
+    },
+    rules: { ...js.configs.recommended.rules, ...sharedRules },
   },
   {
     files: ["eslint.config.js"],
@@ -67,6 +85,21 @@ module.exports = [
       globals: {
         ...globals.browser,
         ...globals.es2022,
+      },
+    },
+    rules: { ...js.configs.recommended.rules, ...sharedRules },
+  },
+  {
+    // Cloudflare Worker와 빌드 스크립트 ES 모듈
+    files: ["server/*.mjs", "scripts/*.mjs"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      globals: {
+        ...globals.node,
+        WebSocketPair: "readonly",
+        WebSocketRequestResponsePair: "readonly",
+        WebSocket: "readonly",
       },
     },
     rules: { ...js.configs.recommended.rules, ...sharedRules },
