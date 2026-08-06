@@ -252,6 +252,17 @@ body {
   letter-spacing: 0.1em;
 }
 
+/* 봇 표시 — 사람과 헷갈리지 않게 테두리만 두른다. */
+.bot-tag {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid #46606b;
+  color: #8ea6ae;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
 .slot-char {
   margin-top: 4px;
   color: var(--muted);

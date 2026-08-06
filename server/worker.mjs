@@ -17,6 +17,9 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
 });
 
 const cleanText = (value, max = 32) => String(value ?? "").trim().slice(0, max);
+// 전원이 끊긴 방을 지우기까지 기다리는 시간. 화면 이동(방 → 게임) 중의 공백을 넘긴다.
+const EMPTY_ROOM_GRACE_MS = 20000;
+const BOT_NAMES = ["봇 알파", "봇 브라보", "봇 찰리", "봇 델타", "봇 에코", "봇 폭스"];
 const roomName = (id) => `room:${id}`;
 const token = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
 const publicMember = (member) => ({
@@ -26,12 +29,25 @@ const publicMember = (member) => ({
   ready: member.ready,
   characterId: member.characterId,
   connected: Boolean(member.connected),
+  bot: Boolean(member.bot),
   hp: member.hp,
   alive: member.alive,
   x: member.x,
   y: member.y,
   dir: member.dir,
+  // 결과창 전적. 킬·딜량·명중은 서버가 세고, 발사 수만 클라이언트가 보고한다.
+  kills: member.kills || 0,
+  damage: member.damage || 0,
+  shots: member.shots || 0,
+  hits: member.hits || 0,
 });
+
+const clearStats = (member) => {
+  member.kills = 0;
+  member.damage = 0;
+  member.shots = 0;
+  member.hits = 0;
+};
 
 export default {
   async fetch(request, env) {
@@ -169,6 +185,7 @@ export class GameRoom extends DurableObject {
       id: crypto.randomUUID(), name: cleanText(input.nickname, 12), team: "A",
       ready: true, characterId: "soldier", token: hostToken,
       connected: false, hp: 100, alive: true, x: -520, y: 0, dir: 0,
+      kills: 0, damage: 0, shots: 0, hits: 0,
     };
     const room = {
       id: input.id, title: cleanText(input.title, 30), capacity: Number(input.capacity),
@@ -197,6 +214,7 @@ export class GameRoom extends DurableObject {
       characterId: "soldier", token: token(), connected: false,
       hp: 100, alive: true, x: team === "A" ? -520 : 520, y: 0,
       dir: team === "A" ? 0 : Math.PI,
+      kills: 0, damage: 0, shots: 0, hits: 0,
     };
     room.members.push(member);
     await this.save(room);
@@ -206,6 +224,8 @@ export class GameRoom extends DurableObject {
 
   auth(room, request) {
     const supplied = new URL(request.url).searchParams.get("token") || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    // 봇은 토큰이 없다(null). 빈 토큰이 봇과 맞아떨어지지 않게 먼저 막는다.
+    if (!supplied) return null;
     return room.members.find((m) => m.token === supplied) || null;
   }
 
@@ -222,6 +242,20 @@ export class GameRoom extends DurableObject {
     if (!room) return json({ error: "존재하지 않는 방입니다." }, 404);
     const member = this.auth(room, request);
     if (!member) return json({ error: "방 인증이 필요합니다." }, 401);
+    // 끝난 방에 다시 들어오면 대기실로 되돌린다 — 그래야 결과창의 "방으로" 가
+    // 죽은 방이 아니라 다음 판을 준비할 수 있는 방으로 이어진다.
+    if (room.status === "finished") {
+      room.status = "lobby";
+      room.winner = null;
+      for (const player of room.members) {
+        player.hp = 100;
+        player.alive = true;
+        player.ready = player.id === room.hostId;
+        clearStats(player);
+      }
+    }
+    // 누군가 들어왔으니 빈 방 정리 예약을 취소한다.
+    await this.ctx.storage.deleteAlarm();
     const [client, server] = Object.values(new WebSocketPair());
     const attachment = { playerId: member.id, roomId: room.id };
     server.serializeAttachment(attachment);
@@ -272,6 +306,21 @@ export class GameRoom extends DurableObject {
       if (member.team === data.value || count >= room.capacity / 2) return false;
       member.team = data.value;
       if (member.id !== room.hostId) member.ready = false;
+    } else if (data.action === "addbot" && member.id === room.hostId) {
+      /* 봇은 방 인원을 채우는 가짜 참가자다. 토큰이 없어 접속할 수 없고,
+         게임 중에는 방장 화면이 AI 를 돌려 위치·피격을 대신 보고한다. */
+      if (room.members.length >= room.capacity) return false;
+      const perTeam = room.capacity / 2;
+      const team = room.members.filter((m) => m.team === "A").length < perTeam ? "A" : "B";
+      const name = BOT_NAMES.find((n) => !room.members.some((m) => m.name === n))
+        || `봇 ${room.members.length + 1}`;
+      room.members.push({
+        id: crypto.randomUUID(), name, team, ready: true, characterId: "soldier",
+        token: null, connected: false, bot: true,
+        hp: 100, alive: true, x: team === "A" ? -520 : 520, y: 0,
+        dir: team === "A" ? 0 : Math.PI,
+        kills: 0, damage: 0, shots: 0, hits: 0,
+      });
     } else if (data.action === "map" && member.id === room.hostId && ALLOWED_MAPS.has(data.value)) room.mapId = data.value;
     else if (data.action === "kick" && member.id === room.hostId && data.value !== room.hostId) {
       const index = room.members.findIndex((m) => m.id === data.value);
@@ -287,6 +336,7 @@ export class GameRoom extends DurableObject {
       for (const player of room.members) {
         const offset = (teamOffsets[player.team]++ - 1) * 85;
         player.hp = 100; player.alive = true;
+        clearStats(player); // 새 판이니 전적도 새로 센다
         player.x = player.team === "A" ? -520 : 520;
         player.y = offset; player.dir = player.team === "A" ? 0 : Math.PI;
       }
@@ -294,7 +344,17 @@ export class GameRoom extends DurableObject {
     return true;
   }
 
-  async handleState(room, member, data, ws) {
+  /* 보고의 주체. 보통은 보낸 사람 자신이고, 방장이 자기 화면에서 돌리는 봇을
+     대신 보고할 때만 그 봇이 된다. 봇이 아닌 남을 사칭하는 건 막는다. */
+  subjectOf(room, sender, data) {
+    if (!data.playerId || data.playerId === sender.id) return sender;
+    if (sender.id !== room.hostId) return null;
+    return room.members.find((m) => m.id === data.playerId && m.bot) || null;
+  }
+
+  async handleState(room, sender, data, ws) {
+    const member = this.subjectOf(room, sender, data);
+    if (!member) return;
     if (room.status !== "playing" || !member.alive) return;
     const now = Date.now();
     if (member.lastStateAt && now - member.lastStateAt < 35) return;
@@ -303,11 +363,16 @@ export class GameRoom extends DurableObject {
     member.x = Math.max(-1200, Math.min(1200, x));
     member.y = Math.max(-700, Math.min(700, y));
     member.dir = dir; member.lastStateAt = now;
+    // 명중률을 내려면 발사 수가 필요한데 서버는 총알을 모른다. 클라이언트가 세어 보낸다.
+    const shots = Number(data.shots);
+    if (Number.isFinite(shots) && shots > (member.shots || 0)) member.shots = Math.min(9999, Math.floor(shots));
     await this.ctx.storage.put("room", room);
     this.broadcast(room, { type: "state", player: publicMember(member) }, ws);
   }
 
-  async handleHit(room, attacker, data) {
+  async handleHit(room, sender, data) {
+    const attacker = this.subjectOf(room, sender, data);
+    if (!attacker) return;
     if (room.status !== "playing" || !attacker.alive) return;
     const target = room.members.find((m) => m.id === data.targetId);
     if (!target?.alive || target.team === attacker.team) return;
@@ -318,8 +383,13 @@ export class GameRoom extends DurableObject {
     attacker.lastHitAt = now;
     const maxDamage = DAMAGE_LIMITS[attacker.characterId] || 40;
     const damage = Math.max(1, Math.min(maxDamage, Number(data.damage) || 1));
+    const dealt = Math.min(damage, target.hp);
     target.hp = Math.max(0, target.hp - damage);
     target.alive = target.hp > 0;
+    // 결과창 전적 — 실제로 깎인 체력만 딜량으로 센다.
+    attacker.hits = (attacker.hits || 0) + 1;
+    attacker.damage = (attacker.damage || 0) + dealt;
+    if (!target.alive) attacker.kills = (attacker.kills || 0) + 1;
     const slowed = attacker.characterId === "frog";
     const aliveTeams = new Set(room.members.filter((m) => m.alive).map((m) => m.team));
     if (aliveTeams.size <= 1) {
@@ -329,6 +399,15 @@ export class GameRoom extends DurableObject {
     await this.save(room);
     this.broadcast(room, { type: "hit", attackerId: attacker.id, targetId: target.id, damage, hp: target.hp, alive: target.alive, slowed });
     if (room.status === "finished") this.broadcast(room, { type: "finish", winner: room.winner, room: this.publicRoom(room) });
+  }
+
+  /* 유예 시간이 지난 뒤에도 사람이 없으면 방을 지운다. */
+  async alarm() {
+    const room = await this.load();
+    if (!room) return;
+    if (room.members.some((member) => !member.bot && member.connected)) return;
+    await this.ctx.storage.delete("room");
+    await this.updateDirectory(room, true);
   }
 
   async webSocketClose(ws) {
@@ -348,12 +427,22 @@ export class GameRoom extends DurableObject {
     if (room.status === "lobby") {
       const wasHost = member.id === room.hostId;
       room.members = room.members.filter((m) => m.id !== member.id);
-      if (wasHost && room.members.length) room.hostId = room.members[0].id;
-      if (!room.members.length) {
+      // 방장이 나가면 사람에게만 넘긴다. 봇은 방장이 될 수 없다.
+      if (wasHost) room.hostId = room.members.find((m) => !m.bot)?.id || room.hostId;
+      // 봇만 남은 방은 빈 방이다.
+      if (!room.members.some((m) => !m.bot)) {
         await this.ctx.storage.delete("room");
         await this.updateDirectory(room, true);
         return;
       }
+    } else if (room.members.every((m) => m.bot || !m.connected)) {
+      /* 게임 중·게임 후에는 잠깐 끊긴 사람을 바로 내보내지 않는다(재접속 여지).
+         전원이 끊기면 빈 방이지만, 방 화면 → 게임 화면으로 넘어가는 순간에도
+         잠깐 전원이 끊긴 것처럼 보인다. 바로 지우면 그 틈에 방이 사라진다.
+         그래서 알람을 걸어 두고, 유예 시간이 지나도 아무도 없으면 지운다. */
+      await this.save(room);
+      await this.ctx.storage.setAlarm(Date.now() + EMPTY_ROOM_GRACE_MS);
+      return;
     }
     await this.save(room);
     this.broadcast(room);

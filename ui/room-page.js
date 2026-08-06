@@ -30,9 +30,20 @@ function renderSlots() {
     for (let index = 0; index < perTeam(); index += 1) {
       const member = members[index];
       if (!member) {
-        const empty = document.createElement("div");
-        empty.className = "slot empty"; empty.textContent = "온라인 참가자 대기 중";
-        box.appendChild(empty); continue;
+        // 빈 자리: 방장은 눌러서 봇을 채울 수 있다. 봇은 게임 중 방장 화면이 조종한다.
+        if (isHost()) {
+          const add = document.createElement("button");
+          add.type = "button";
+          add.className = "slot empty";
+          add.textContent = "＋ 봇 추가";
+          add.addEventListener("click", () => sendAction(socket, "addbot"));
+          box.appendChild(add);
+        } else {
+          const empty = document.createElement("div");
+          empty.className = "slot empty"; empty.textContent = "온라인 참가자 대기 중";
+          box.appendChild(empty);
+        }
+        continue;
       }
       const slot = document.createElement("div");
       slot.className = member.id === session.playerId ? "slot me" : "slot";
@@ -46,6 +57,9 @@ function renderSlots() {
       name.className = "slot-name"; name.textContent = member.name;
       if (member.id === room.hostId) {
         const tag = document.createElement("span"); tag.className = "host-tag"; tag.textContent = "방장"; name.appendChild(tag);
+      }
+      if (member.bot) {
+        const tag = document.createElement("span"); tag.className = "bot-tag"; tag.textContent = "BOT"; name.appendChild(tag);
       }
       const char = document.createElement("div");
       char.className = "slot-char"; char.textContent = character ? `${character.name} · ${character.role}` : "캐릭터 미선택";

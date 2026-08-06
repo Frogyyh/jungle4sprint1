@@ -67,13 +67,26 @@
         <button id="resume-button" class="primary-button">계속하기</button>
       </section>
 
-      <section id="result-screen" class="screen-card hidden">
+      <section id="result-screen" class="screen-card result-card hidden">
         <div class="eyebrow" id="result-eyebrow">OPERATION COMPLETE</div>
         <h2 id="result-title">MISSION SUCCESS</h2>
         <p id="result-copy"></p>
+        <!-- 팀별 전적. 내용은 lobby-bridge.js 가 채운다. -->
+        <div id="scoreboard" class="scoreboard"></div>
         <div class="result-stats"><div><b id="result-kills">0</b><span>HOSTILES</span></div><div><b id="result-accuracy">0%</b><span>ACCURACY</span></div><div><b id="result-time">00:00</b><span>TIME</span></div></div>
-        <button id="restart-button" class="primary-button">다시 시작 <span>↻</span></button>
+        <div class="result-actions">
+          <button id="room-return-button" class="ghost-button" type="button">방으로</button>
+          <button id="lobby-return-button" class="ghost-button" type="button">로비로</button>
+          <button id="restart-button" class="primary-button">다시 시작 <span>↻</span></button>
+        </div>
       </section>
+
+      <!-- 관전 중 띄우는 줄. 결과창으로 돌아갈 길을 남긴다. -->
+      <div id="spectate-bar" class="spectate-bar hidden">
+        <span id="spectate-who">관전 중</span>
+        <em>ESC 로 나가기</em>
+        <button id="spectate-close" class="ghost-button" type="button">결과 보기</button>
+      </div>
 
       <div id="toast" class="toast" aria-live="polite"></div>
       <script src="./quality-pass.js"></script>
