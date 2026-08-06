@@ -19,6 +19,15 @@
       "reaper", "hunter", "ninja", "sniper", "demolitionist",
     ]);
     const meleeWeaponIds = new Set(["scythe", "katana"]);
+    const characterOffsets = Object.freeze({
+      // The source frame includes a left-side coat/scarf flourish. Shift the
+      // painted body back over the gameplay origin without changing hitboxes.
+      gunslinger: Object.freeze({ x: -2.4, y: 0 }),
+    });
+    const teamOutlineColors = Object.freeze({
+      player: 0x3b9dff,
+      enemy: 0xff4258,
+    });
     let texturesLoaded = 0;
     let textureFailures = 0;
 
@@ -30,12 +39,12 @@
         { texture: "rifle.png", x: 0, y: 28, width: 39, height: 21, rotation: Math.PI / 2 },
       ],
       dual_pistols: [
-        { texture: "pistol-l.png", x: -7, y: 25, width: 25, height: 15, rotation: Math.PI / 2, gunSide: -1 },
+        { texture: "pistol-l.png", x: -7, y: 25, width: 25, height: 15, rotation: -Math.PI / 2, gunSide: -1 },
         { texture: "pistol-r.png", x: 7, y: 25, width: 25, height: 15, rotation: Math.PI / 2, gunSide: 1 },
       ],
       shield_pistol: [
-        { texture: "shield.png", x: 0, y: 20, width: 49, height: 42, rotation: 0 },
-        { texture: "pistol-r.png", x: 13, y: 35, width: 23, height: 14, rotation: Math.PI / 2 },
+        { texture: "shield.png", x: -10, y: 24, width: 42, height: 52, rotation: Math.PI / 2, hand: "left" },
+        { texture: "pistol-r.png", x: 14, y: 34, width: 23, height: 14, rotation: Math.PI / 2, hand: "right" },
       ],
       railgun: [
         { texture: "railgun.png", x: 0, y: 33, width: 55, height: 25, rotation: Math.PI / 2 },
@@ -154,8 +163,10 @@
     };
 
     const clearCharacterVisual = (actor) => {
-      if (!actor?._characterSprite) return;
+      if (!actor) return;
+      disposeAssetMesh(actor._characterOutline);
       disposeAssetMesh(actor._characterSprite);
+      actor._characterOutline = null;
       actor._characterSprite = null;
       actor._assetCharacterId = null;
     };
@@ -172,17 +183,38 @@
       const characterId = resolveCharacterId(actor);
       if (actor._assetCharacterId === characterId && actor._characterSprite) return;
       clearCharacterVisual(actor);
-      const sprite = makeTexturedPlane(`${CHARACTER_ROOT}/${characterId}.png`, 55, 55, actor.team === "enemy" ? 0xffd4d4 : 0xffffff);
-      sprite.position.set(0, 0, 10.45);
+      const textureUrl = `${CHARACTER_ROOT}/${characterId}.png`;
+      const offset = characterOffsets[characterId] || { x: 0, y: 0 };
+      const outlineColor = teamOutlineColors[actor.team] || teamOutlineColors.player;
+      const outline = makeTexturedPlane(textureUrl, 59, 59, outlineColor);
+      outline.position.set(offset.x, offset.y, 10.4);
+      outline.material.opacity = 0.94;
+      outline.userData = {
+        ...outline.userData,
+        breachlineCharacterOutline: true,
+        characterId,
+        worldOffsetX: offset.x,
+        worldOffsetY: offset.y,
+      };
+      const sprite = makeTexturedPlane(textureUrl, 55, 55, 0xffffff);
+      sprite.position.set(offset.x, offset.y, 10.45);
       sprite.userData = {
         ...sprite.userData,
         breachlineCharacterSprite: true,
         characterId,
+        worldOffsetX: offset.x,
+        worldOffsetY: offset.y,
       };
-      actor.mesh.add(sprite);
+      actor.mesh.add(outline, sprite);
+      actor._characterOutline = outline;
       actor._characterSprite = sprite;
       actor._assetCharacterId = characterId;
       if (actor.body) actor.body.visible = false;
+      if (actor.ring?.material?.color) {
+        actor.ring.material.color.setHex(outlineColor);
+        actor.ring.material.transparent = true;
+        actor.ring.material.opacity = actor.team === "enemy" ? 0.74 : 0.78;
+      }
     };
 
     const originalApplyWeaponVisual = game.applyWeaponVisual.bind(game);
@@ -217,6 +249,8 @@
             breachlineBaseY: item.y,
             breachlineBaseRotation: item.rotation || 0,
             breachlineGunSide: item.gunSide,
+            breachlineHand: item.hand,
+            breachlineNormalTextureUrl: `${WEAPON_ROOT}/${item.texture}`,
           };
           root.add(piece);
         });
@@ -272,14 +306,94 @@
       if (actor === this.player) this.canvas.dataset.visualRecoilClass = `firearm-${weaponId}`;
     };
 
+    const updateCharacterTransform = (actor, rotateWithActor) => {
+      const parentAngle = actor.mesh.rotation.z;
+      const inverseAngle = -parentAngle;
+      const cos = Math.cos(inverseAngle);
+      const sin = Math.sin(inverseAngle);
+      for (const visual of [actor._characterOutline, actor._characterSprite]) {
+        if (!visual) continue;
+        const offsetX = visual.userData.worldOffsetX || 0;
+        const offsetY = visual.userData.worldOffsetY || 0;
+        if (rotateWithActor) {
+          visual.position.x = offsetX;
+          visual.position.y = offsetY;
+          visual.rotation.z = 0;
+        } else {
+          // actor.mesh keeps tracking aim for its weapon. Applying the inverse
+          // transform here leaves the character art fixed in world space.
+          visual.position.x = offsetX * cos - offsetY * sin;
+          visual.position.y = offsetX * sin + offsetY * cos;
+          visual.rotation.z = inverseAngle;
+        }
+      }
+    };
+
+    const updateTeamIdentification = (actor) => {
+      if (!actor.ring?.material?.color) return;
+      const statusOwnsRing = (actor.slowUntil || 0) > game.now || (
+        actor === game.player && (
+          game._operatorDash?.kind === "hunter"
+          || (game.activeOperatorId === "sentinel" && (
+            game._revealUntil > game.now || game._railChargeStartedAt !== null
+          ))
+        )
+      );
+      if (statusOwnsRing) return;
+      actor.ring.material.color.setHex(teamOutlineColors[actor.team] || teamOutlineColors.player);
+      actor.ring.material.transparent = true;
+      actor.ring.material.opacity = actor.team === "enemy" ? 0.74 : 0.78;
+    };
+
+    const updateGunKataPose = (actor, active) => {
+      if (actor !== game.player || actor._visualWeaponId !== "dual_pistols") return;
+      const pieces = actor._weaponVisualRoot?.children?.filter((piece) => piece.userData?.breachlineAssetWeapon) || [];
+      if (active) {
+        const pistolLeftTexture = getTexture(`${WEAPON_ROOT}/pistol-l.png`);
+        for (const [index, piece] of pieces.entries()) {
+          const side = piece.userData.breachlineGunSide || (index ? 1 : -1);
+          piece.userData.breachlineGunSide = side;
+          piece.userData.breachlineGunKataHand = side < 0 ? "left" : "right";
+          if (piece.material?.map !== pistolLeftTexture) {
+            piece.material.map = pistolLeftTexture;
+            piece.material.needsUpdate = true;
+          }
+          // Two copies of PistolL are held away from the body during the spin.
+          piece.rotation.z = -side * Math.PI / 2;
+        }
+      } else if (actor._gunKataAssetPose) {
+        for (const piece of pieces) {
+          const normalUrl = piece.userData.breachlineNormalTextureUrl;
+          if (!normalUrl || !piece.material) continue;
+          piece.material.map = getTexture(normalUrl);
+          piece.material.needsUpdate = true;
+          piece.rotation.z = piece.userData.breachlineBaseRotation || 0;
+          delete piece.userData.breachlineGunKataHand;
+        }
+      }
+      actor._gunKataAssetPose = active;
+      if (actor === game.player) game.canvas.dataset.gunKataAssetPose = active ? "dual-pistol-l-spin" : "idle";
+    };
+
     const updateActorVisual = (actor) => {
       applyCharacterVisual(actor);
+      const gunKataActive = actor === game.player && game._operatorDash?.kind === "gunslinger";
+      updateCharacterTransform(actor, gunKataActive);
+      updateTeamIdentification(actor);
+      updateGunKataPose(actor, gunKataActive);
       const root = actor._weaponVisualRoot;
       if (!root) return;
 
       root.scale.x = Math.abs(root.userData.baseScaleX || 1);
       root.scale.y = Math.abs(root.userData.baseScaleY || 1);
       root.userData.facingHemisphere = Math.cos(actor.dir) < 0 ? "left" : "right";
+
+      if (gunKataActive) {
+        actor._assetRecoil = null;
+        root.position.set(0, 0, 0);
+        root.rotation.z = 0;
+        return;
+      }
 
       const recoil = actor._assetRecoil;
       if (!recoil || game.now >= recoil.endAt || meleeWeaponIds.has(actor.weapon?.id)) {
@@ -319,7 +433,7 @@
       updateGrenadeVisuals(dt);
       for (const actor of [this.player, ...this.bots]) {
         if (!actor._characterSprite?.material?.color || this.now < (actor._assetPulseUntil || 0)) continue;
-        actor._characterSprite.material.color.setHex(actor.team === "enemy" ? 0xffd4d4 : 0xffffff);
+        actor._characterSprite.material.color.setHex(0xffffff);
       }
       this.canvas.dataset.assetWeaponRoot = String(Boolean(this.player._weaponVisualRoot));
       this.canvas.dataset.weaponMirrored = String(Boolean(
@@ -332,8 +446,14 @@
     const originalResetRound = game.resetRound.bind(game);
     game.resetRound = function resetAssetVisuals(...args) {
       originalResetRound(...args);
+      for (const actor of [this.player, ...this.bots]) {
+        actor._assetPulseUntil = 0;
+        actor._gunKataAssetPose = false;
+        if (actor._characterSprite?.material?.color) actor._characterSprite.material.color.setHex(0xffffff);
+      }
       this.applyWeaponVisual(this.player, this.player.weapon.id);
       for (const bot of this.bots) this.applyWeaponVisual(bot, bot.weapon.id);
+      this.canvas.dataset.gunKataAssetPose = "idle";
     };
 
     const originalRender = game.render.bind(game);
@@ -351,6 +471,8 @@
     game.canvas.dataset.assetCharacters = [...characterIds].join(",");
     game.canvas.dataset.assetWeaponProfiles = Object.keys(weaponProfiles).join(",");
     game.canvas.dataset.meleeVisualRecoil = "disabled";
+    game.canvas.dataset.characterAimRotation = "weapon-only";
+    game.canvas.dataset.teamOutlineStyle = "blue-red-silhouette-rim";
     refreshAssetDataset();
   };
 

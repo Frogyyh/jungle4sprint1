@@ -16,6 +16,8 @@
     const FLASH_DURATION = 1;
     const SMOKE_DURATION = 10;
     const AI_FAIR_RANGE = 620;
+    const DEFAULT_VIEW_SCALE = 1.25;
+    const SNIPER_VIEW_SCALE = 1.5;
 
     const ui = {
       flashGadget: $("#flash-gadget"),
@@ -28,6 +30,7 @@
       zoom: $("#zoom-status"),
       layout: $("#map-layout"),
       flashStatus: $("#flash-status"),
+      smokeStatus: $("#smoke-status"),
       hitmarker: $("#hitmarker"),
       damage: $("#damage-overlay"),
       smoke: $("#smoke-overlay"),
@@ -40,7 +43,7 @@
     ui.throwPreview = $("#throw-preview");
     ui.throwVector = $("#throw-vector");
 
-    game.viewScale = 1;
+    game.viewScale = DEFAULT_VIEW_SCALE;
     game.cameraShake = 0;
     game._selectedGadget = null;
     game._grenadeChargeStartedAt = 0;
@@ -52,6 +55,8 @@
     game.canvas.dataset.smokeDuration = String(SMOKE_DURATION);
     game.canvas.dataset.enemyGadgetMix = "50:50";
     game.canvas.dataset.flashDurations = FLASH_DURATION.toFixed(2);
+    game.canvas.dataset.cameraZoomMode = "fixed";
+    game.canvas.dataset.identificationBounds = "camera-frustum";
 
     const layouts = [
       {
@@ -456,6 +461,23 @@
       this.cameraShake = 0;
       this._flashFeedback = [];
       this._incomingUntil = 0;
+      this.player._breachlineColorPulseSerial = (this.player._breachlineColorPulseSerial || 0) + 1;
+      this.player._assetPulseUntil = 0;
+      if (this.player._characterSprite?.material?.color) {
+        this.player._characterSprite.material.color.setHex(0xffffff);
+      }
+      ui.damage?.classList.remove("active");
+      ui.damage?.style.removeProperty("opacity");
+      ui.health?.classList.remove("hit");
+      ui.hitmarker?.classList.remove("active", "kill");
+      ui.hitmarker?.style.removeProperty("left");
+      ui.hitmarker?.style.removeProperty("top");
+      ui.smoke?.classList.remove("active");
+      ui.smokeStatus?.classList.remove("active", "inside");
+      if (ui.smokeStatus) {
+        ui.smokeStatus.textContent = "";
+        ui.smokeStatus.style.setProperty("--smoke-progress", "0%");
+      }
       clearGadget();
       applyLayout(this._roundSerial % layouts.length);
       applyWeaponVisual(this.player, this.player.weapon.id);
@@ -474,7 +496,9 @@
     const originalFrustum = game.updateCameraFrustum.bind(game);
     game.updateCameraFrustum = function () {
       originalFrustum();
-      const scale = clamp(this.viewScale || 1, 1, 1.5);
+      const operatorId = this.activeOperatorId || this.selectedOperatorId;
+      const scale = operatorId === "sniper" ? SNIPER_VIEW_SCALE : DEFAULT_VIEW_SCALE;
+      this.viewScale = scale;
       this.camera.left *= scale;
       this.camera.right *= scale;
       this.camera.top *= scale;
@@ -483,8 +507,22 @@
       this.canvas.dataset.viewScale = scale.toFixed(2);
     };
 
+    const isActorInsideCamera = (actor) => {
+      if (!actor?.pos) return false;
+      const margin = Math.max(4, actor.radius || 0);
+      const left = game.camera.position.x + game.camera.left + margin;
+      const right = game.camera.position.x + game.camera.right - margin;
+      const bottom = game.camera.position.y + game.camera.bottom + margin;
+      const top = game.camera.position.y + game.camera.top - margin;
+      return actor.pos.x >= left && actor.pos.x <= right && actor.pos.y >= bottom && actor.pos.y <= top;
+    };
+
     const originalVisible = game.isVisible.bind(game);
     game.isVisible = function (observer, target, coneDegrees, distance) {
+      if ((observer === this.player || target === this.player)) {
+        const otherActor = observer === this.player ? target : observer;
+        if (!isActorInsideCamera(otherActor)) return false;
+      }
       const fairDistance = observer.team === "enemy" && target === this.player
         ? Math.min(distance, AI_FAIR_RANGE)
         : distance;
@@ -543,7 +581,10 @@
         const before = this.smokes.length;
         originalExplode(grenade);
         if (this.smokes.length > before) {
-          this.smokes[this.smokes.length - 1].endAt = this.now + SMOKE_DURATION;
+          const smoke = this.smokes[this.smokes.length - 1];
+          smoke.endAt = this.now + SMOKE_DURATION;
+          smoke.owner = grenade.owner;
+          smoke._breachlineSmokeStartedAt = this.now;
         }
         this.canvas.dataset.lastSmokeEndAt = (this.now + SMOKE_DURATION).toFixed(2);
         return;
@@ -590,6 +631,39 @@
       this.canvas.dataset.lastFlashHits = String(affected.length);
     };
 
+    const originalUpdateSmokes = game.updateSmokes.bind(game);
+    game.updateSmokes = function updateAnimatedSmokes() {
+      for (const smoke of this.smokes) {
+        if (!smoke?.mesh || smoke.endAt <= this.now) continue;
+        const meshData = smoke.mesh.userData || (smoke.mesh.userData = {});
+        if (meshData.breachlineBaseRotation === undefined) {
+          meshData.breachlineBaseRotation = smoke.mesh.rotation.z || 0;
+        }
+        smoke.mesh.rotation.z = meshData.breachlineBaseRotation + Math.sin(this.now * 0.22 + smoke.id) * 0.075;
+
+        let puffIndex = 0;
+        for (const puff of smoke.mesh.children) {
+          if (!puff.userData?.breachlineSmokePuff) continue;
+          const data = puff.userData;
+          if (data.breachlineBaseX === undefined) {
+            data.breachlineBaseX = puff.position.x;
+            data.breachlineBaseY = puff.position.y;
+            data.breachlineBaseScale = puff.scale.x;
+            data.breachlineBaseOpacity = puff.material.opacity;
+          }
+          const phase = this.now * 0.58 + puffIndex * 2.17;
+          const drift = smoke.radius * 0.012;
+          const breathe = 1 + Math.sin(this.now * 0.9 + puffIndex * 1.43) * 0.055;
+          puff.position.x = data.breachlineBaseX + Math.cos(phase) * drift;
+          puff.position.y = data.breachlineBaseY + Math.sin(phase * 0.87) * drift;
+          puff.scale.setScalar(data.breachlineBaseScale * breathe);
+          puff.material.opacity = data.breachlineBaseOpacity * (0.9 + Math.sin(phase + 0.7) * 0.1);
+          puffIndex += 1;
+        }
+      }
+      return originalUpdateSmokes();
+    };
+
     const originalFire = game.fire.bind(game);
     game.fire = function (actor, direction) {
       const shotsBefore = actor.shots;
@@ -620,8 +694,15 @@
       }, 90);
 
       if (source === this.player) {
+        const targetScreen = worldToScreen(target.pos);
+        const markerInset = 20;
+        const markerX = clamp(targetScreen.x, targetScreen.rect.left + markerInset, targetScreen.rect.right - markerInset);
+        const markerY = clamp(targetScreen.y, targetScreen.rect.top + markerInset, targetScreen.rect.bottom - markerInset);
+        ui.hitmarker.style.left = `${markerX}px`;
+        ui.hitmarker.style.top = `${markerY}px`;
         ui.hitmarker.classList.toggle("kill", wasAlive && !target.alive);
         pulseClass(ui.hitmarker, "active");
+        this.canvas.dataset.lastHitmarkerPosition = `${Math.round(markerX)}:${Math.round(markerY)}`;
       }
       if (target === this.player) {
         this.cameraShake = Math.min(12, this.cameraShake + 6);
@@ -655,8 +736,46 @@
       updateThrowPreview();
       const insideSmoke = this.isInsideSmoke(this.player.pos);
       ui.smoke.classList.toggle("active", insideSmoke && this.player.flashedUntil <= this.now);
-      ui.zoom.textContent = `VIEW ${this.viewScale.toFixed(2)}×`;
+      const fixedScale = this.activeOperatorId === "sniper" ? SNIPER_VIEW_SCALE : DEFAULT_VIEW_SCALE;
+      ui.zoom.textContent = `VIEW ${fixedScale.toFixed(2)}× // FIXED`;
       ui.ammo.classList.toggle("low-ammo", this.player.ammo <= Math.max(2, Math.ceil(this.player.weapon.magSize * 0.2)));
+
+      let trackedSmoke = null;
+      let trackedSmokeContainsPlayer = false;
+      for (const smoke of this.smokes) {
+        if (smoke.endAt <= this.now) continue;
+        const containsPlayer = this.player.pos.distanceTo(smoke.pos) < smoke.radius;
+        const ownedByPlayer = smoke.owner === this.player;
+        if (!containsPlayer && !ownedByPlayer) continue;
+        if (
+          !trackedSmoke
+          || (containsPlayer && !trackedSmokeContainsPlayer)
+          || (containsPlayer === trackedSmokeContainsPlayer && smoke.endAt > trackedSmoke.endAt)
+        ) {
+          trackedSmoke = smoke;
+          trackedSmokeContainsPlayer = containsPlayer;
+        }
+      }
+      if (ui.smokeStatus) {
+        if (trackedSmoke) {
+          const remaining = Math.max(0, trackedSmoke.endAt - this.now);
+          const startedAt = trackedSmoke._breachlineSmokeStartedAt ?? Math.max(0, trackedSmoke.endAt - SMOKE_DURATION);
+          const duration = Math.max(0.001, trackedSmoke.endAt - startedAt);
+          const progress = clamp(remaining / duration, 0, 1);
+          ui.smokeStatus.textContent = `${trackedSmokeContainsPlayer ? "OBSCURED" : "SMOKE"} · ${remaining.toFixed(1)}s`;
+          ui.smokeStatus.classList.add("active");
+          ui.smokeStatus.classList.toggle("inside", trackedSmokeContainsPlayer);
+          ui.smokeStatus.style.setProperty("--smoke-progress", `${(progress * 100).toFixed(1)}%`);
+          ui.smokeStatus.setAttribute("aria-label", `Smoke ${remaining.toFixed(1)} seconds remaining`);
+          this.canvas.dataset.smokeTimerRemaining = remaining.toFixed(2);
+        } else {
+          ui.smokeStatus.textContent = "";
+          ui.smokeStatus.classList.remove("active", "inside");
+          ui.smokeStatus.style.setProperty("--smoke-progress", "0%");
+          ui.smokeStatus.removeAttribute("aria-label");
+          this.canvas.dataset.smokeTimerRemaining = "0.00";
+        }
+      }
 
       const activeFlashes = this._flashFeedback.filter((entry) => entry.actor.flashedUntil > this.now);
       this._flashFeedback = activeFlashes;
@@ -686,6 +805,7 @@
       this.canvas.dataset.aiAcquisitionRange = String(AI_FAIR_RANGE);
       this.canvas.dataset.flashFeedback = ui.flashStatus.textContent;
       this.canvas.dataset.flashDurations = FLASH_DURATION.toFixed(2);
+      this.canvas.dataset.identificationViewScale = fixedScale.toFixed(2);
     };
 
     window.addEventListener("keydown", (event) => {
@@ -731,17 +851,6 @@
       game.throwGrenade(type, game.player, game.mouse.world.clone());
       clearGadget();
     }, true);
-
-    game.canvas.addEventListener("wheel", (event) => {
-      if (game.phase !== "playing") return;
-      event.preventDefault();
-      const direction = Math.sign(event.deltaY);
-      const minimumScale = game.activeOperatorId === "sniper" ? 1.5 : 1;
-      game.viewScale = clamp(game.viewScale + direction * 0.08, minimumScale, 1.5);
-      game.updateCameraFrustum();
-      game.visibilityDirty = true;
-      game.showToast(`VIEW ${game.viewScale.toFixed(2)}×`);
-    }, { capture: true, passive: false });
 
     game.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     window.addEventListener("blur", clearGadget);
