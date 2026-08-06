@@ -157,11 +157,8 @@
         { x: 5, y: 17, w: 6, h: 6, color: 0x26363d }
       ],
       shield_pistol: [
-        { x: 0, y: 24, w: 44, h: 22, color: 0x738aa0, opacity: 0.9 },
-        { x: 13, y: 36, w: 4, h: 16, color: 0xffc36f },
-        { x: 0, y: 24, w: 31, h: 14, color: 0x26363d, opacity: 0.86 },
-        { x: -19, y: 24, w: 5, h: 20, color: 0x9bb5ff },
-        { x: 19, y: 24, w: 5, h: 20, color: 0x9bb5ff }
+        // 방패 이미지 제거 — 방벽은 벡터 도형(operator-system)으로 표시된다.
+        { x: -2, y: 34, w: 4, h: 16, color: 0xffc36f },
       ],
       railgun: [
         { x: -3.5, y: 30, w: 2.5, h: 31, color: 0x9bb5ff },
@@ -427,34 +424,20 @@
       game.canvas.dataset.predictedThrowPower = power.toFixed(2);
     };
 
-    // 폭탄마: 유탄 착탄 지점에 폭발 반경(67) 고리와 도달 예상 시간을 표시한다.
-    // 조준 중에는 마우스(착탄 예정 지점)를 따라가고, 발사 후에는 도착 지점에 고정된다.
+    // 폭탄마: 유탄 발사 중에는 착탄 지점에 폭발 반경(67) 고리와 도달 예상 시간을
+    // 고정 표시한다. 조준 중에는 아무것도 표시하지 않는다(크로스헤어 원 제거).
     const LAUNCHER_RADIUS = 67;
     const updateLauncherPreview = () => {
       if (game.activeOperatorId !== "demolitionist") return; // 다른 캐릭터 프리뷰를 건드리지 않는다
-      if (game.phase !== "playing" || !game.player.alive) {
+      const inFlight = game.grenades.find((grenade) => grenade.directFire);
+      if (!inFlight) {
         ui.throwPreview.classList.add("hidden");
         return;
       }
       const launcherSpeed = game.player.weapon?.projectileSpeed || 620;
-
-      // 비행 중인 유탄이 있으면 착탄점에 고정 표시 (크로스헤어와 분리)
-      const inFlight = game.grenades.find((grenade) => grenade.directFire);
-      let center;
-      let travelTime;
-      if (inFlight) {
-        center = inFlight.targetPos;
-        const remaining = inFlight.pos.distanceTo(inFlight.targetPos);
-        travelTime = remaining / (inFlight.speed || launcherSpeed);
-      } else {
-        const launcherRange = game.player.weapon?.range || 780;
-        const aim = game.mouse.world.clone().sub(game.player.pos);
-        if (aim.lengthSq() < 1) aim.set(Math.cos(game.player.dir), Math.sin(game.player.dir));
-        center = game.player.pos.clone().add(
-          aim.clone().normalize().multiplyScalar(Math.min(aim.length(), launcherRange)),
-        );
-        travelTime = Math.min(aim.length(), launcherRange) / launcherSpeed;
-      }
+      const center = inFlight.targetPos;
+      const remaining = inFlight.pos.distanceTo(inFlight.targetPos);
+      const travelTime = remaining / (inFlight.speed || launcherSpeed);
 
       const screen = worldToScreen(center);
       const size = Math.max(42, LAUNCHER_RADIUS * 2 * screen.unitsToPixels);
@@ -473,7 +456,7 @@
       if (timer) timer.textContent = `IMPACT ${travelTime.toFixed(1)}s`;
       game.canvas.dataset.launcherPreview = `${Math.round(center.x)}:${Math.round(center.y)}`;
       game.canvas.dataset.launcherPreviewTime = travelTime.toFixed(2);
-      game.canvas.dataset.launcherPreviewPinned = inFlight ? "true" : "false";
+      game.canvas.dataset.launcherPreviewPinned = "true";
     };
 
     const clearGadget = () => {
@@ -592,6 +575,8 @@
 
     const originalVisible = game.isVisible.bind(game);
     game.isVisible = function (observer, target, coneDegrees, distance) {
+      // 피아식별 규칙: 아군은 항상 식별, 적은 시야 안에서만 식별된다.
+      if (observer !== target && observer.team === target.team) return true;
       if ((observer === this.player || target === this.player)) {
         const otherActor = observer === this.player ? target : observer;
         if (!isActorInsideCamera(otherActor)) return false;
@@ -654,8 +639,18 @@
 
     const originalThrowGrenade = game.throwGrenade.bind(game);
     game.throwGrenade = function (requestedType, actor, target) {
+      const power = actor === this.player
+        ? clamp(this._pendingThrowPower || 1, 1, 2)
+        : this.rng.range(0.95, 1.25);
+      // 폭탄마 수류탄(frag) 등 특수 투척물도 투척 파워를 적용한다.
       if (requestedType !== "flash" && requestedType !== "smoke" && this.createSpecialGrenade) {
-        return this.createSpecialGrenade(requestedType, actor, target);
+        const grenade = this.createSpecialGrenade(requestedType, actor, target);
+        if (grenade && actor === this.player) {
+          grenade.vel.multiplyScalar(power);
+          grenade.throwPower = power;
+        }
+        this._pendingThrowPower = 1;
+        return grenade;
       }
       let type = requestedType;
       let throwTarget = target;
@@ -670,9 +665,6 @@
         else throwTarget = actor.pos.clone().lerp(this.player.pos, 0.2);
       }
 
-      const power = actor === this.player
-        ? clamp(this._pendingThrowPower || 1, 1, 2)
-        : this.rng.range(0.95, 1.25);
       const predictedLanding = predictGrenadeLanding(actor, type, power, throwTarget);
       const before = this.grenades.length;
       originalThrowGrenade(type, actor, throwTarget);
@@ -764,6 +756,9 @@
         }
         smoke.mesh.rotation.z = meshData.breachlineBaseRotation + Math.sin(this.now * 0.22 + smoke.id) * 0.075;
 
+        // 내부 시점에서는 퍼프를 숨겨 "연막 원 공간"만 보이게 한다.
+        // (바깥에서 볼 때만 뭉게뭉게 효과 유지)
+        const playerInside = this.player.pos.distanceTo(smoke.pos) < smoke.radius;
         let puffIndex = 0;
         for (const puff of smoke.mesh.children) {
           if (!puff.userData?.breachlineSmokePuff) continue;
@@ -774,11 +769,24 @@
             data.breachlineBaseScale = puff.scale.x;
             data.breachlineBaseOpacity = puff.material.opacity;
           }
-          const phase = this.now * 0.58 + puffIndex * 2.17;
-          const drift = smoke.radius * 0.012;
+          puff.visible = !playerInside;
+          // 3계층 드리프트: 코어는 좁게, 외곽 림은 넓게 흔들린다.
+          const layerScale = data.breachlineSmokeLayer === 2 ? 1.6 : data.breachlineSmokeLayer === 1 ? 1.15 : 0.8;
+          const phase = this.now * 0.58 + (data.breachlineSmokeSeed || puffIndex * 2.17);
+          const drift = smoke.radius * 0.02 * layerScale;
           const breathe = 1 + Math.sin(this.now * 0.9 + puffIndex * 1.43) * 0.055;
-          puff.position.x = data.breachlineBaseX + Math.cos(phase) * drift;
-          puff.position.y = data.breachlineBaseY + Math.sin(phase * 0.87) * drift;
+          let nextX = data.breachlineBaseX + Math.cos(phase) * drift;
+          let nextY = data.breachlineBaseY + Math.sin(phase * 0.87) * drift;
+          // 퍼프는 반드시 연막 범위 내부에서만 표시된다 (외부 침범 금지)
+          const puffRadius = data.breachlineBaseScale * (smoke.mesh.scale.x || 1) * 1.06;
+          const maxRadius = Math.max(1, smoke.radius - puffRadius);
+          const radial = Math.hypot(nextX, nextY);
+          if (radial > maxRadius) {
+            nextX *= maxRadius / radial;
+            nextY *= maxRadius / radial;
+          }
+          puff.position.x = nextX;
+          puff.position.y = nextY;
           puff.scale.setScalar(data.breachlineBaseScale * breathe);
           puff.material.opacity = data.breachlineBaseOpacity * (0.9 + Math.sin(phase + 0.7) * 0.1);
           puffIndex += 1;
@@ -941,7 +949,11 @@
         game.showToast("PRIMARY READY");
         return;
       }
-      const gadgetByKey = { Digit2: "flash" };
+      // 병과별 투척물: 군인=섬광탄, 스나이퍼=연막탄, 폭탄마=수류탄 (모두 2번키)
+      const gadgetByKey = {
+        Digit2: game.activeOperatorId === "sniper" ? "smoke"
+          : game.activeOperatorId === "demolitionist" ? "frag" : "flash",
+      };
       if (["Digit2", "Digit3", "Digit4"].includes(event.code)) {
         event.preventDefault();
         event.stopImmediatePropagation();

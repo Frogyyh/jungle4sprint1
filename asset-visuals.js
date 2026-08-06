@@ -43,10 +43,8 @@
         { texture: "pistol-r.png", x: 7, y: 25, width: 25, height: 15, rotation: Math.PI / 2, gunSide: 1 },
       ],
       shield_pistol: [
-        // 방패는 왼손(x-)에, 권총은 방패와 캐릭터 사이(x- 쪽, 방패 오른편)에
-        // 배치한다. 방패는 반시계방향 90도 회전된 상태.
-        { texture: "shield.png", x: -13, y: 24, width: 42, height: 52, rotation: Math.PI / 2, hand: "left" },
-        { texture: "pistol-r.png", x: -4, y: 36, width: 23, height: 14, rotation: Math.PI / 2, hand: "right" },
+        // 방패 이미지는 방벽(벡터 도형) 메커니즘으로 대체되어 제거됨. 권총만 표시.
+        { texture: "pistol-r.png", x: -2, y: 34, width: 23, height: 14, rotation: Math.PI / 2, hand: "right" },
       ],
       railgun: [
         { texture: "railgun.png", x: 0, y: 33, width: 55, height: 25, rotation: Math.PI / 2 },

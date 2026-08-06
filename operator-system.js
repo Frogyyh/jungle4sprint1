@@ -22,8 +22,15 @@
     const GUN_KATA_RADIUS = 176; // 원형 공격 범위 2배 (기존 88)
     const GUN_KATA_DAMAGE = 50;
     const SHIELD_VIEW_DEGREES = 20;
-    const SHIELD_BLOCK_HALF_ANGLE = Math.PI / 4; // 좌우 45도 (총 90도)
-    const SHIELD_BLOCK_RANGE = 200; // 방패 방호 유효 거리 (시각 표시와 일치)
+
+    // 아이언 방벽 (라인하르트식): 우클릭 홀드로 전방 60도 부채꼴 방벽 전개
+    const BARRIER_MAX_HP = 250;
+    const BARRIER_REGEN_DELAY = 1; // 해제 후 1초 뒤부터 재생
+    const BARRIER_REGEN_RATE = 50; // 초당 재생량
+    const BARRIER_BREAK_COOLDOWN = 10; // 파괴 시 재사용 불가 시간
+    const BARRIER_HALF_ANGLE = Math.PI / 6; // 전방 60도 (좌우 30도)
+    const BARRIER_INNER = 55; // 방벽은 캐릭터로부터 약 75 거리에 전개
+    const BARRIER_OUTER = 100;
 
     const WEAPONS = Object.freeze({
       gunslinger: { id: "dual_pistols", name: "DUAL PISTOLS", damage: 15, pellets: 1, rpm: 800, spreadDeg: 4, magSize: 30, reserve: 9999, reload: 2.5, range: 720, projectileSpeed: 1450, color: 0xffd166 },
@@ -112,10 +119,10 @@
     };
 
     const updateGadgetVisibility = () => {
-      const soldier = isOperator("soldier");
-      ui.frag.classList.add("hidden");
-      ui.flash.classList.toggle("hidden", !soldier);
-      ui.smoke.classList.add("hidden");
+      // 2번키 투척물: 군인=섬광탄, 스나이퍼=연막탄, 폭탄마=수류탄
+      ui.flash.classList.toggle("hidden", !isOperator("soldier"));
+      ui.smoke.classList.toggle("hidden", !isOperator("sniper"));
+      ui.frag.classList.toggle("hidden", !isOperator("demolitionist"));
     };
 
     const applyOperator = (selected) => {
@@ -138,6 +145,7 @@
       if (scytheSource) scytheSource.visible = true;
       clearSummons();
       clearOperatorFx();
+      resetBarrier();
 
       if (selected.id !== "frog") {
         const weapon = WEAPONS[selected.id] || WEAPONS.soldier;
@@ -145,10 +153,9 @@
         game.player.ammo = weapon.magSize;
         game.player.reserve = weapon.reserve;
       }
-      game.player.fragGrenades = 0;
+      game.player.fragGrenades = selected.id === "demolitionist" ? 2 : 0;
       game.player.flashGrenades = selected.id === "soldier" ? 2 : 0;
-      game.player.smokeGrenades = 0;
-      game.player.specialGrenades = selected.id === "demolitionist" ? 2 : 0;
+      game.player.smokeGrenades = selected.id === "sniper" ? 2 : 0;
       game.viewScale = selected.id === "sniper" ? 1.5 : 1;
       game.updateCameraFrustum();
       applyAppearance(selected);
@@ -169,7 +176,11 @@
       applyOperator(selected);
     };
 
-    game.canUseGadget = (type) => isOperator("soldier") && type === "flash";
+    game.canUseGadget = (type) => (
+      (isOperator("soldier") && type === "flash")
+      || (isOperator("sniper") && type === "smoke")
+      || (isOperator("demolitionist") && type === "frag")
+    );
     game.getGadgetCount = (type) => ({
       frag: game.player.fragGrenades || 0,
       flash: game.player.flashGrenades || 0,
@@ -598,23 +609,40 @@
     const styleSmokeCloud = (smoke) => {
       if (!smoke?.mesh || smoke.mesh.userData?.breachlineSmokeCluster) return;
       game.canvas.dataset.lastDetonationFx = "smoke-cluster";
-      game.canvas.dataset.smokePuffCount = "14";
+      game.canvas.dataset.smokePuffCount = "22";
       smoke.mesh.userData = { ...smoke.mesh.userData, breachlineSmokeCluster: true };
       smoke.mesh.material.transparent = true;
-      smoke.mesh.material.opacity = 0.08;
+      smoke.mesh.material.opacity = 0.06;
       smoke.mesh.material.depthWrite = false;
-      for (let index = 0; index < 14; index++) {
-        const angle = index / 14 * Math.PI * 2 + (index % 3) * 0.18;
-        const distance = smoke.radius * (0.12 + (index % 5) * 0.13);
-        const puff = smoke.mesh.clone(false);
-        puff.material = smoke.mesh.material.clone();
-        puff.material.color.setHex(index % 3 === 0 ? 0x58717d : index % 3 === 1 ? 0x435b68 : 0x647b84);
-        puff.material.opacity = 0.3 + (index % 4) * 0.035;
-        puff.position.set(Math.cos(angle) * distance, Math.sin(angle) * distance, 0.15 + index * 0.002);
-        puff.scale.setScalar(0.2 + (index % 5) * 0.055);
-        puff.userData = { breachlineSmokePuff: true };
-        smoke.mesh.add(puff);
-      }
+      // 3계층 퍼프: 중앙 코어(밝음) → 중간층 → 외곽 림(가장자리 강조)
+      const layers = [
+        { count: 4, distance: (i) => smoke.radius * (0.08 + i * 0.05), scale: (i) => 0.34 - i * 0.02, color: 0x7d97a1, opacity: 0.42 },
+        { count: 8, distance: (i) => smoke.radius * (0.34 + i * 0.06), scale: (i) => 0.3 - i * 0.015, color: 0x5a7480, opacity: 0.34 },
+        { count: 10, distance: (i) => smoke.radius * (0.62 + i * 0.035), scale: (i) => 0.26 - i * 0.01, color: 0x8ba3ab, opacity: 0.4 },
+      ];
+      let puffIndex = 0;
+      layers.forEach((layer, layerIndex) => {
+        for (let index = 0; index < layer.count; index++) {
+          const angle = index / layer.count * Math.PI * 2 + layerIndex * 0.35 + (index % 3) * 0.22;
+          const puff = smoke.mesh.clone(false);
+          puff.material = smoke.mesh.material.clone();
+          puff.material.color.setHex(layer.color);
+          puff.material.opacity = layer.opacity * (0.85 + (index % 3) * 0.1);
+          puff.position.set(
+            Math.cos(angle) * layer.distance(index),
+            Math.sin(angle) * layer.distance(index),
+            0.15 + puffIndex * 0.0015,
+          );
+          puff.scale.setScalar(layer.scale(index));
+          puff.userData = {
+            breachlineSmokePuff: true,
+            breachlineSmokeLayer: layerIndex, // 0=코어 1=중간 2=림
+            breachlineSmokeSeed: puffIndex * 1.37,
+          };
+          smoke.mesh.add(puff);
+          puffIndex += 1;
+        }
+      });
     };
 
     const originalExplode = game.explode.bind(game);
@@ -947,22 +975,64 @@
       game.showToast("TRIPLE DAGGERS");
     };
 
-    const throwDemoFrag = () => {
-      if (game.player.specialGrenades <= 0) {
-        game.showToast("FRAG EMPTY");
-        return;
-      }
-      game.player.specialGrenades--;
-      const current = game.player.fragGrenades;
-      game.player.fragGrenades = 1;
-      createSpecialGrenade("frag", game.player, game.mouse.world.clone());
-      game.player.fragGrenades = current;
-    };
-
     const SCYTHE_THROW_RANGE = 480;
     const SCYTHE_OUT_SPEED = 950;
     const SCYTHE_RETURN_SPEED = 1150;
     const SCYTHE_HIT_BUFFER = 26;
+    const SCYTHE_FX_DOTS = 8;
+    const SCYTHE_FX_RING = 8;
+
+    const createScytheFx = (startPos) => {
+      const group = new game.fxGroup.constructor();
+      const makeDot = (color, opacity, scale) => {
+        const dot = game.player.body.clone(false);
+        dot.geometry = game.player.body.geometry.clone();
+        dot.material = game.player.body.material.clone();
+        dot.material.color.setHex(color);
+        dot.material.transparent = true;
+        dot.material.opacity = opacity;
+        dot.material.depthWrite = false;
+        dot.scale.setScalar(scale);
+        group.add(dot);
+        return dot;
+      };
+      const pathDots = [];
+      for (let index = 0; index < SCYTHE_FX_DOTS; index++) {
+        pathDots.push(makeDot(0xc59bff, 0.65, 0.12));
+      }
+      const ringDots = [];
+      for (let index = 0; index < SCYTHE_FX_RING; index++) {
+        ringDots.push(makeDot(0xffd166, 0.85, 0.14));
+      }
+      group.position.set(startPos.x, startPos.y, 0);
+      game.fxGroup.add(group);
+      return { group, pathDots, ringDots };
+    };
+
+    const updateScytheFx = (thrown) => {
+      if (!thrown.fx) return;
+      const fx = thrown.fx;
+      fx.group.position.set(thrown.pos.x, thrown.pos.y, 0);
+      // 피격 반경 링 (낫 주변)
+      fx.ringDots.forEach((dot, index) => {
+        const angle = index / SCYTHE_FX_RING * Math.PI * 2 + thrown.rot * 0.5;
+        dot.position.set(Math.cos(angle) * (SCYTHE_HIT_BUFFER + 12), Math.sin(angle) * (SCYTHE_HIT_BUFFER + 12), 26);
+      });
+      // 궤적: 비행 방향으로 도트 8개 (회수 시에는 플레이어 방향)
+      let target;
+      if (thrown.out) {
+        target = thrown.pos.clone().add(thrown.dir.clone().multiplyScalar(SCYTHE_THROW_RANGE - thrown.traveled));
+      } else {
+        target = game.player.pos;
+      }
+      fx.pathDots.forEach((dot, index) => {
+        const t = (index + 1) / SCYTHE_FX_DOTS;
+        const px = thrown.pos.x + (target.x - thrown.pos.x) * t;
+        const py = thrown.pos.y + (target.y - thrown.pos.y) * t;
+        dot.position.set(px, py, 25);
+        dot.material.opacity = 0.65 * (1 - t * 0.6);
+      });
+    };
 
     // 사신 우클릭: 낫을 부메랑처럼 던진다 (벽 관통). 회수 전까지 근접 공격 불가.
     const useScytheThrow = () => {
@@ -993,6 +1063,7 @@
         hit: new Set(),
         mesh,
         rot: 0,
+        fx: createScytheFx(game.player.pos),
       };
       game.canvas.dataset.scytheThrown = "true";
       game.showToast("SCYTHE THROWN");
@@ -1004,6 +1075,13 @@
       if (thrown.mesh) {
         game.fxGroup.remove(thrown.mesh);
         thrown.mesh.traverse((part) => {
+          part.geometry?.dispose?.();
+          part.material?.dispose?.();
+        });
+      }
+      if (thrown.fx) {
+        game.fxGroup.remove(thrown.fx.group);
+        thrown.fx.group.traverse((part) => {
           part.geometry?.dispose?.();
           part.material?.dispose?.();
         });
@@ -1046,9 +1124,10 @@
         thrown.mesh.position.set(thrown.pos.x, thrown.pos.y, 14);
         thrown.mesh.rotation.z = thrown.rot;
       }
-      // 접촉 피해 (대상당 1회)
+      updateScytheFx(thrown);
+      // 접촉 피해 (대상당 1회) — 아군(team "player")은 제외
       for (const bot of game.bots) {
-        if (!bot.alive || thrown.hit.has(bot)) continue;
+        if (!bot.alive || bot.team === "player" || thrown.hit.has(bot)) continue;
         if (bot.pos.distanceTo(thrown.pos) > SCYTHE_HIT_BUFFER + bot.radius) continue;
         thrown.hit.add(bot);
         game.player.hits++;
@@ -1060,7 +1139,7 @@
     const useSecondary = () => {
       if (isOperator("gunslinger")) startDash("gunslinger");
       else if (isOperator("ninja")) fireDaggers();
-      else if (isOperator("demolitionist")) throwDemoFrag();
+      else if (isOperator("bulwark")) deployBarrier();
       else if (isOperator("reaper")) useScytheThrow();
       else game.showToast("NO SECONDARY ATTACK");
     };
@@ -1423,19 +1502,9 @@
       game.visibilityDirty = true;
       game.cameraShake = Math.max(game.cameraShake, 3);
 
-      // 시각 이펙트: 넓은 부채꼴 번쩍임 + 밝은 코어 버스트
+      // 시각 이펙트: 부채꼴 범위에만 빛이 발생한다 (방사형 버스트 없음)
       createRangeSector(game.player, Math.atan2(direction.y, direction.x), FLASH_SHIELD_RANGE, FLASH_SHIELD_HALF_ANGLE, 0xffe67d);
-      for (let index = 0; index < 16; index++) {
-        const angle = index / 16 * Math.PI * 2;
-        const dir = vector(Math.cos(angle), Math.sin(angle));
-        createWorldStrip(
-          game.player.pos.clone().add(dir.clone().multiplyScalar(6)),
-          game.player.pos.clone().add(dir.multiplyScalar(index % 2 ? 70 : 130)),
-          index % 2 ? 2.4 : 5,
-          index % 3 ? 0xffe67d : 0xffffff,
-          { duration: 0.22, opacity: 0.95 },
-        );
-      }
+      createRangeSector(game.player, Math.atan2(direction.y, direction.x), FLASH_SHIELD_RANGE * 0.55, FLASH_SHIELD_HALF_ANGLE * 0.8, 0xffffff);
       game.canvas.dataset.lastFlashShield = `${Math.round(game.now * 100) / 100}:hits=${hits}`;
       game.showToast(hits ? `FLASH SHIELD ×${hits}` : "FLASH SHIELD");
     };
@@ -1466,6 +1535,7 @@
         game._railNeedsRelease = false;
         if (isOperator("sentinel")) game.player.ring.material.color.setHex(0x55f0b0);
       }
+      if (event.button === 2) releaseBarrier();
     });
     window.addEventListener("keydown", (event) => {
       if (event.code !== "Space" || event.repeat || game.phase !== "playing" || isOperator("frog")) return;
@@ -1478,17 +1548,11 @@
     game.damageActor = function damageWithOperatorRules(source, target, amount) {
       if (!target?.alive || source?.team === target.team) return;
       if (target === this.player && this._operatorDash?.invulnerable) return;
-      if (target === this.player && isOperator("bulwark") && source?.pos) {
-        const incoming = source.pos.clone().sub(target.pos);
-        const incomingDistance = incoming.length();
-        const incomingAngle = Math.atan2(incoming.y, incoming.x);
-        // 방패 방호: 정면 좌우 45도 + 유효 거리(200) 이내. (시각 범위와 일치)
-        if (incomingDistance <= SHIELD_BLOCK_RANGE
-          && Math.abs(angleDelta(incomingAngle, target.dir)) <= SHIELD_BLOCK_HALF_ANGLE) {
-          this.showToast("SHIELD BLOCK");
-          this.canvas.dataset.lastShieldBlock = this.now.toFixed(2);
-          return;
-        }
+      // 아이언 방벽: 전방 공격(투사체·히트스캔)을 방벽 체력으로 흡수한다.
+      if (target === this.player && isOperator("bulwark") && source?.pos && barrierBlocks(source.pos, target.pos)) {
+        absorbBarrierDamage(amount);
+        this.canvas.dataset.lastBarrierBlock = `${Math.round(this.now * 100) / 100}:${amount}`;
+        return;
       }
       const before = target.hp;
       originalDamageActor(source, target, amount);
@@ -1509,6 +1573,7 @@
       if (actor === this.player && !this._operatorForcedMove) {
         if (isOperator("sniper")) movement = delta.clone().multiplyScalar(0.75);
         else if (isOperator("ninja") && this.isInsideSmoke(this.player.pos)) movement = delta.clone().multiplyScalar(1.5);
+        else if (isOperator("bulwark") && this._barrier?.active) movement = delta.clone().multiplyScalar(0.5);
       }
       originalMoveActor(actor, movement);
     };
@@ -1637,7 +1702,7 @@
         let target = null;
         let nearestDistance = Infinity;
         for (const bot of game.bots) {
-          if (!bot.alive) continue;
+          if (!bot.alive || bot.team === "player") continue; // 아군은 소환수 목표 제외
           const distance = bot.pos.distanceToSquared(summon.pos);
           if (distance >= nearestDistance) continue;
           nearestDistance = distance;
@@ -1774,11 +1839,17 @@
     };
 
     const originalUpdateBots = game.updateBots.bind(game);
-    game.updateBots = function updateBotsWithSummonCombat(dt) {
+    game.updateBots = function updateBotsMultiplayerSafe(dt) {
+      // 멀티플레이 대비: 원격 플레이어 액터(_remote)는 AI 제어에서 제외한다.
+      const remote = [];
+      for (let index = this.bots.length - 1; index >= 0; index--) {
+        if (!this.bots[index]._remote) continue;
+        remote.push(this.bots.splice(index, 1)[0]);
+      }
       if (game._summons.length) {
         const engaged = [];
         for (const bot of this.bots) {
-          if (!bot.alive || bot.flashedUntil > this.now) continue;
+          if (!bot.alive || bot.team === "player" || bot.flashedUntil > this.now) continue;
           const summon = nearestSummonThreat(bot);
           if (!summon) continue;
           engaged.push(bot);
@@ -1802,10 +1873,12 @@
               bot.ring.material.color.setHex(bot.slowUntil > this.now ? 0x8ab4ff : 0xffb0ac);
             }
           }
+          for (const bot of remote) this.bots.push(bot);
           return;
         }
       }
       originalUpdateBots(dt);
+      for (const bot of remote) this.bots.push(bot);
     };
 
     // 세그먼트-원 충돌 판정. 코어 _p 는 투사체가 히트박스 내부에서 생성되면(근거리
@@ -1842,6 +1915,12 @@
       for (let index = this.projectiles.length - 1; index >= 0; index--) {
         const projectile = this.projectiles[index];
         if (!projectile?._prevPos) continue;
+        // 아이언 방벽: 적 투사체가 방벽을 지나면 흡수
+        if (projectile.source?.team === "enemy" && barrierBlocks(projectile._prevPos, projectile.pos)) {
+          absorbBarrierDamage(projectile.damage);
+          this.removeProjectile(index);
+          continue;
+        }
         for (const target of [this.player, ...this.bots]) {
           if (target === projectile.source || !target.alive) continue;
           if (!segmentCircleHit(projectile._prevPos, projectile.pos, target.pos, target.radius + PROJECTILE_HIT_BUFFER)) continue;
@@ -1912,46 +1991,191 @@
     };
     game._flashHalos = flashHalos; // 디버그/테스트용 노출
 
-    // 아이언: 방패 방호 범위(정면 좌우 45도 · 200)를 아크로 상시 표시한다.
-    const SHIELD_ARC_DOTS = 10;
-    const shieldArc = { group: null, dots: [] };
-    const ensureShieldArc = () => {
-      if (shieldArc.group) return;
+    // ---- 아이언 방벽 (벡터 도형) ----
+    // 상태: game._barrier = { active, hp, regenAt, disabledUntil, mesh }
+    const barrierVisual = { group: null, fan: [], arc: [], edges: [] };
+
+    const ensureBarrierVisual = () => {
+      if (barrierVisual.group) return;
       const group = new game.fxGroup.constructor();
-      const dots = [];
-      for (let index = 0; index < SHIELD_ARC_DOTS; index++) {
-        const dot = game.player.body.clone(false);
-        dot.geometry = game.player.body.geometry.clone();
-        dot.material = game.player.body.material.clone();
-        dot.material.color.setHex(0x9bc8ff);
-        dot.material.transparent = true;
-        dot.material.opacity = 0.5;
-        dot.material.depthWrite = false;
-        dot.scale.setScalar(0.13);
-        dots.push(dot);
-        group.add(dot);
+      const makeStrip = (color, opacity, width) => {
+        const strip = game.floor.clone(false);
+        strip.geometry = game.floor.geometry.clone();
+        strip.material = game.floor.material.clone();
+        strip.material.color.setHex(color);
+        strip.material.transparent = true;
+        strip.material.opacity = opacity;
+        strip.material.depthWrite = false;
+        strip.userData.barrierWidth = width;
+        group.add(strip);
+        return strip;
+      };
+      const fan = [];
+      const fanCount = 12;
+      for (let index = 0; index < fanCount; index++) {
+        fan.push(makeStrip(0x4a9dff, 0.14, 9));
       }
+      const arc = [];
+      const arcCount = 10;
+      for (let index = 0; index < arcCount; index++) {
+        arc.push(makeStrip(0x9bd0ff, 0.85, 3));
+      }
+      const edges = [makeStrip(0x9bd0ff, 0.9, 3.4), makeStrip(0x9bd0ff, 0.9, 3.4)];
       group.visible = false;
       game.fxGroup.add(group);
-      shieldArc.group = group;
-      shieldArc.dots = dots;
+      barrierVisual.group = group;
+      barrierVisual.fan = fan;
+      barrierVisual.arc = arc;
+      barrierVisual.edges = edges;
     };
-    const syncShieldArc = () => {
-      ensureShieldArc();
-      const visible = isOperator("bulwark") && game.phase === "playing" && game.player.alive;
-      shieldArc.group.visible = visible;
+
+    const setBarrierStrip = (strip, from, to) => {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const length = Math.max(0.01, Math.hypot(dx, dy));
+      const params = game.floor.geometry?.parameters || { width: 2600, height: 1800 };
+      strip.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, 24);
+      strip.rotation.z = Math.atan2(dy, dx);
+      strip.scale.set(length / params.width, (strip.userData.barrierWidth || 3) / params.height, 1);
+    };
+
+    const syncBarrierVisual = () => {
+      ensureBarrierVisual();
+      const barrier = game._barrier;
+      const visible = Boolean(barrier && barrier.active && game.phase === "playing" && game.player.alive);
+      barrierVisual.group.visible = visible;
       if (!visible) return;
-      shieldArc.group.position.set(game.player.pos.x, game.player.pos.y, 0);
-      shieldArc.group.rotation.z = game.player.dir;
-      const pulse = 1 + Math.sin(game.now * 3.2) * 0.05;
-      shieldArc.group.scale.set(pulse, pulse, 1);
-      shieldArc.dots.forEach((dot, index) => {
-        const t = index / (SHIELD_ARC_DOTS - 1);
-        const angle = -SHIELD_BLOCK_HALF_ANGLE + t * SHIELD_BLOCK_HALF_ANGLE * 2;
-        dot.position.set(Math.cos(angle) * SHIELD_BLOCK_RANGE, Math.sin(angle) * SHIELD_BLOCK_RANGE, 25);
+      const origin = game.player.pos;
+      const dir = game.player.dir;
+      const hpFrac = clamp(barrier.hp / BARRIER_MAX_HP, 0, 1);
+      // 피해 비례: 방벽이 약해지면 호가 붉게 물든다
+      for (const strip of [...barrierVisual.fan, ...barrierVisual.arc, ...barrierVisual.edges]) {
+        strip.material.color.setHex(hpFrac > 0.35 ? 0x9bd0ff : 0xff8a7a);
+      }
+      const fanCount = barrierVisual.fan.length;
+      barrierVisual.fan.forEach((strip, index) => {
+        const angleA = dir - BARRIER_HALF_ANGLE + index / fanCount * BARRIER_HALF_ANGLE * 2;
+        const angleB = dir - BARRIER_HALF_ANGLE + (index + 1) / fanCount * BARRIER_HALF_ANGLE * 2;
+        setBarrierStrip(
+          strip,
+          origin.clone().add(vector(Math.cos(angleA), Math.sin(angleA)).multiplyScalar(BARRIER_INNER)),
+          origin.clone().add(vector(Math.cos(angleB), Math.sin(angleB)).multiplyScalar(BARRIER_OUTER)),
+        );
+      });
+      const arcCount = barrierVisual.arc.length;
+      barrierVisual.arc.forEach((strip, index) => {
+        const angleA = dir - BARRIER_HALF_ANGLE + index / arcCount * BARRIER_HALF_ANGLE * 2;
+        const angleB = dir - BARRIER_HALF_ANGLE + (index + 1) / arcCount * BARRIER_HALF_ANGLE * 2;
+        const radius = BARRIER_OUTER * (0.88 + hpFrac * 0.12);
+        setBarrierStrip(
+          strip,
+          origin.clone().add(vector(Math.cos(angleA), Math.sin(angleA)).multiplyScalar(radius)),
+          origin.clone().add(vector(Math.cos(angleB), Math.sin(angleB)).multiplyScalar(radius)),
+        );
+      });
+      barrierVisual.edges.forEach((strip, index) => {
+        const angle = dir + (index === 0 ? -BARRIER_HALF_ANGLE : BARRIER_HALF_ANGLE);
+        const from = origin.clone().add(vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(BARRIER_INNER));
+        const to = origin.clone().add(vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(BARRIER_OUTER));
+        setBarrierStrip(strip, from, to);
       });
     };
-    game._shieldArcState = shieldArc; // 디버그/테스트용 노출
+
+    const resetBarrier = () => {
+      game._barrier = {
+        active: false,
+        hp: BARRIER_MAX_HP,
+        regenAt: 0,
+        disabledUntil: 0,
+      };
+      if (barrierVisual.group) barrierVisual.group.visible = false;
+      game.canvas.dataset.barrierHp = String(BARRIER_MAX_HP);
+      game.canvas.dataset.barrierState = "ready";
+    };
+
+    const deployBarrier = () => {
+      if (!isOperator("bulwark")) return;
+      const barrier = game._barrier;
+      if (game.now < barrier.disabledUntil) {
+        game.showToast(`BARRIER ${Math.ceil(barrier.disabledUntil - game.now)}s`);
+        return;
+      }
+      if (barrier.active) return;
+      barrier.active = true;
+      game.canvas.dataset.barrierState = "active";
+      game.showToast("BARRIER DEPLOYED");
+    };
+
+    const releaseBarrier = () => {
+      const barrier = game._barrier;
+      if (!barrier || !barrier.active) return;
+      barrier.active = false;
+      barrier.regenAt = game.now + BARRIER_REGEN_DELAY;
+      game.canvas.dataset.barrierState = "regen";
+    };
+
+    const destroyBarrier = () => {
+      const barrier = game._barrier;
+      if (!barrier || !barrier.active) return;
+      barrier.active = false;
+      barrier.hp = 0;
+      barrier.disabledUntil = game.now + BARRIER_BREAK_COOLDOWN;
+      // 파괴 이펙트: 방사형 파편 + 섬광
+      for (let index = 0; index < 18; index++) {
+        const angle = index / 18 * Math.PI * 2;
+        const dir = vector(Math.cos(angle), Math.sin(angle));
+        createWorldStrip(
+          game.player.pos.clone().add(dir.clone().multiplyScalar(BARRIER_INNER)),
+          game.player.pos.clone().add(dir.multiplyScalar(BARRIER_INNER + 46)),
+          index % 2 ? 4 : 8,
+          index % 3 ? 0x9bd0ff : 0xffffff,
+          { duration: 0.34, opacity: 0.95 },
+        );
+      }
+      createPulseDisc(game.player, BARRIER_OUTER, 0x9bd0ff, 0.4, 0.16);
+      game.cameraShake = Math.max(game.cameraShake, 7);
+      game.canvas.dataset.barrierState = "broken";
+      game.canvas.dataset.barrierHp = "0";
+      game.showToast("BARRIER DESTROYED");
+    };
+
+    const updateBarrier = (dt) => {
+      const barrier = game._barrier;
+      if (!barrier) return;
+      if (!barrier.active && barrier.hp < BARRIER_MAX_HP && game.now >= barrier.regenAt) {
+        barrier.hp = Math.min(BARRIER_MAX_HP, barrier.hp + BARRIER_REGEN_RATE * dt);
+        game.canvas.dataset.barrierHp = String(Math.ceil(barrier.hp));
+      }
+      syncBarrierVisual();
+    };
+
+    // 방벽이 세그먼트(from→to)를 흡수하는지 판정 (구간 샘플링)
+    const barrierBlocks = (from, to) => {
+      const barrier = game._barrier;
+      if (!barrier || !barrier.active || barrier.hp <= 0) return false;
+      const samples = 10;
+      for (let index = 0; index <= samples; index++) {
+        const t = index / samples;
+        const px = from.x + (to.x - from.x) * t;
+        const py = from.y + (to.y - from.y) * t;
+        const rel = vector(px - game.player.pos.x, py - game.player.pos.y);
+        const dist = rel.length();
+        if (dist < BARRIER_INNER || dist > BARRIER_OUTER) continue;
+        const angle = Math.atan2(rel.y, rel.x);
+        if (Math.abs(angleDelta(angle, game.player.dir)) <= BARRIER_HALF_ANGLE) return true;
+      }
+      return false;
+    };
+
+    const absorbBarrierDamage = (amount) => {
+      const barrier = game._barrier;
+      if (!barrier) return;
+      barrier.hp = Math.max(0, barrier.hp - amount);
+      game.canvas.dataset.barrierHp = String(Math.ceil(barrier.hp));
+      if (barrier.hp <= 0) destroyBarrier();
+    };
+    game._barrierVisual = barrierVisual; // 디버그/테스트용 노출
+    game.absorbBarrierDamage = absorbBarrierDamage; // 디버그/테스트용 노출
 
     const syncFlashHalos = () => {
       // 시야(부채꼴/원형) 안에 들어온 적에 한해서만 링을 표시한다. (자기 자신 제외)
@@ -2000,7 +2224,7 @@
         this.player.ring.material.color.setHex(Math.sin(this.now * 11) > 0 ? 0xff3b45 : 0xffffff);
       }
       syncFlashHalos();
-      syncShieldArc();
+      updateBarrier(dt);
       updateScytheThrow(dt);
       updateSummons(dt);
       updateOperatorFx();
@@ -2061,7 +2285,7 @@
       this.canvas.dataset.abilityCooldown = abilityCooldown.toFixed(2);
       this.canvas.dataset.specialCooldownSeconds = String(SPECIAL_COOLDOWN);
       this.canvas.dataset.shieldViewDegrees = String(SHIELD_VIEW_DEGREES);
-      this.canvas.dataset.shieldBlockDegrees = String(Math.round(SHIELD_BLOCK_HALF_ANGLE * 360 / Math.PI));
+      this.canvas.dataset.barrierHp = String(Math.ceil(this._barrier?.hp ?? 0));
       this.canvas.dataset.weaponRpm = String(this.player.weapon.rpm);
       this.canvas.dataset.weaponReloadSeconds = String(this.player.weapon.reload);
       this.canvas.dataset.ninjaSmokeRadius = "225";
@@ -2069,9 +2293,28 @@
       this.canvas.dataset.demolitionistCharging = "disabled";
       this.canvas.dataset.hunterInvulnerable = String(Boolean(this._operatorDash?.invulnerable));
       this.canvas.dataset.soldierGadgets = isOperator("soldier") ? "flash:2" : "none";
-      this.canvas.dataset.specialGrenades = String(this.player.specialGrenades || 0);
+      this.canvas.dataset.sniperGadgets = isOperator("sniper") ? "smoke:2" : "none";
+      this.canvas.dataset.demolitionistGadgets = isOperator("demolitionist") ? "frag:2" : "none";
       this.canvas.dataset.healthRegenDelay = "5";
       this.canvas.dataset.healthRegenRate = "5";
+
+      // 아이언 방벽 상태 표시
+      const barrierEl = document.getElementById("barrier-status");
+      if (barrierEl) {
+        if (isOperator("bulwark") && this._barrier) {
+          const barrier = this._barrier;
+          barrierEl.classList.remove("hidden");
+          if (this.now < barrier.disabledUntil) {
+            barrierEl.textContent = `BARRIER ${Math.ceil(barrier.disabledUntil - this.now)}s`;
+            barrierEl.className = "barrier-status broken";
+          } else {
+            barrierEl.textContent = `BARRIER ${Math.ceil(barrier.hp)}/${BARRIER_MAX_HP}`;
+            barrierEl.className = barrier.hp < BARRIER_MAX_HP * 0.35 ? "barrier-status damaged" : "barrier-status";
+          }
+        } else {
+          barrierEl.classList.add("hidden");
+        }
+      }
     };
 
     game.canvas.dataset.operatorSystem = "10-class-v2";
