@@ -400,12 +400,21 @@
       const type = game._selectedGadget;
       const destination = predictGrenadeLanding(game.player, type, power, game.mouse.world);
       const destinationScreen = worldToScreen(destination);
+      // 지시선 + 착탄 예정 지점에 효과 범위(반경) 원 표시
+      const rangeRadius = gadgetRadius(type);
+      const size = Math.max(42, rangeRadius * 2 * destinationScreen.unitsToPixels);
       ui.throwPreview.classList.remove("hidden");
-      ui.throwPreview.classList.add("landing-only");
+      ui.throwPreview.classList.remove("landing-only");
       ui.throwPreview.classList.toggle("smoke", type === "smoke");
       ui.throwPreview.style.left = `${destinationScreen.x}px`;
       ui.throwPreview.style.top = `${destinationScreen.y}px`;
+      ui.throwPreview.style.width = `${size}px`;
+      ui.throwPreview.style.height = `${size}px`;
       ui.throwPreview.style.setProperty("--fill-angle", "0deg");
+      const icon = ui.throwPreview.querySelector(".telegraph-icon");
+      const timer = ui.throwPreview.querySelector(".telegraph-time");
+      if (icon) icon.textContent = "●";
+      if (timer) timer.textContent = `R${rangeRadius}`;
       const playerScreen = worldToScreen(game.player.pos);
       const dx = destinationScreen.x - playerScreen.x;
       const dy = destinationScreen.y - playerScreen.y;
@@ -418,7 +427,7 @@
       game.canvas.dataset.predictedThrowPower = power.toFixed(2);
     };
 
-    // 폭탄마: 유탄 착탄 예정 지점에 폭발 반경(67)을 미리 표시한다.
+    // 폭탄마: 유탄 착탄 예정 지점에 폭발 반경(67) 고리와 도달 예상 시간을 표시한다.
     const LAUNCHER_RADIUS = 67;
     const updateLauncherPreview = () => {
       const demolitionist = game.activeOperatorId === "demolitionist";
@@ -427,6 +436,7 @@
         return;
       }
       const launcherRange = game.player.weapon?.range || 780;
+      const launcherSpeed = game.player.weapon?.projectileSpeed || 620;
       const aim = game.mouse.world.clone().sub(game.player.pos);
       if (aim.lengthSq() < 1) aim.set(Math.cos(game.player.dir), Math.sin(game.player.dir));
       const clamped = game.player.pos.clone().add(
@@ -434,15 +444,22 @@
       );
       const screen = worldToScreen(clamped);
       const size = Math.max(42, LAUNCHER_RADIUS * 2 * screen.unitsToPixels);
+      const travelTime = Math.min(aim.length(), launcherRange) / launcherSpeed;
       ui.throwPreview.classList.remove("hidden");
-      ui.throwPreview.classList.add("landing-only");
-      ui.throwPreview.classList.remove("smoke");
+      ui.throwPreview.classList.remove("landing-only", "smoke");
+      ui.throwPreview.style.setProperty("--telegraph", "#c58bff");
+      ui.throwPreview.style.setProperty("--telegraph-soft", "rgba(197, 139, 255, 0.2)");
       ui.throwPreview.style.left = `${screen.x}px`;
       ui.throwPreview.style.top = `${screen.y}px`;
       ui.throwPreview.style.width = `${size}px`;
       ui.throwPreview.style.height = `${size}px`;
       ui.throwPreview.style.setProperty("--fill-angle", "0deg");
+      const icon = ui.throwPreview.querySelector(".telegraph-icon");
+      const timer = ui.throwPreview.querySelector(".telegraph-time");
+      if (icon) icon.textContent = "●";
+      if (timer) timer.textContent = `IMPACT ${travelTime.toFixed(1)}s`;
       game.canvas.dataset.launcherPreview = `${Math.round(clamped.x)}:${Math.round(clamped.y)}`;
+      game.canvas.dataset.launcherPreviewTime = travelTime.toFixed(2);
     };
 
     const clearGadget = () => {
@@ -484,9 +501,18 @@
     game.clearGadget = clearGadget;
     game.selectGadget = selectGadget;
 
+    // 피격판정 통일: 모든 캐릭터가 동일한 원형 히트박스(반경 20)를 사용한다.
+    // 코어 기본값(18)보다 시각 스프라이트(55px)에 근접해 피격 감각이 원활하다.
+    const ACTOR_RADIUS = 20;
+    const applyActorRadius = (game2) => {
+      game2.player.radius = ACTOR_RADIUS;
+      for (const bot of game2.bots) bot.radius = ACTOR_RADIUS;
+    };
+
     const originalResetRound = game.resetRound.bind(game);
     game.resetRound = function (showLoadout = true) {
       originalResetRound(showLoadout);
+      applyActorRadius(this);
       this.cameraShake = 0;
       this._flashFeedback = [];
       this._incomingUntil = 0;
@@ -546,16 +572,60 @@
       return actor.pos.x >= left && actor.pos.x <= right && actor.pos.y >= bottom && actor.pos.y <= top;
     };
 
+    // 부채꼴 외에 캐릭터 주변에 항상 보이는 원형 시야 (반경 200, 벽/연막 차단 적용)
+    const NEAR_VISION_RADIUS = 200;
+
     const originalVisible = game.isVisible.bind(game);
     game.isVisible = function (observer, target, coneDegrees, distance) {
       if ((observer === this.player || target === this.player)) {
         const otherActor = observer === this.player ? target : observer;
         if (!isActorInsideCamera(otherActor)) return false;
       }
+      // 원형 근접 시야: 부채꼴 각도와 무관하게 근처는 항상 인식한다.
+      if (observer !== target && observer.alive && target.alive) {
+        const delta = target.pos.clone().sub(observer.pos);
+        if (delta.lengthSq() <= NEAR_VISION_RADIUS * NEAR_VISION_RADIUS
+          && !this.smokeBlocks(observer.pos, target.pos)
+          && !this.rayBlocked(observer.pos, target.pos)) {
+          return true;
+        }
+      }
       const fairDistance = observer.team === "enemy" && target === this.player
         ? Math.min(distance, AI_FAIR_RANGE)
         : distance;
       return originalVisible(observer, target, coneDegrees, fairDistance);
+    };
+
+    // 시야 메시(부채꼴)에 원형 근접 시야를 덧붙인다.
+    const originalUpdateVisibility = game.updateVisibility.bind(game);
+    game.updateVisibility = function updateVisibilityWithNearCircle() {
+      originalUpdateVisibility();
+      const mesh = this.visibilityMesh;
+      if (!mesh?.geometry) return;
+      const geometry = mesh.geometry;
+      if (geometry.userData?.breachlineNearVision) return;
+      const positionsAttr = geometry.getAttribute("position");
+      if (!positionsAttr) return;
+      const positions = Array.from(positionsAttr.array);
+      const segments = 40;
+      const points = [];
+      for (let index = 0; index <= segments; index++) {
+        const angle = Math.PI * 2 * index / segments;
+        const direction = this.player.pos.clone().set(Math.cos(angle), Math.sin(angle));
+        points.push(this.traceVision(this.player.pos, direction, NEAR_VISION_RADIUS));
+      }
+      for (let index = 0; index < segments; index++) {
+        positions.push(
+          this.player.pos.x, this.player.pos.y, 12,
+          points[index].x, points[index].y, 12,
+          points[index + 1].x, points[index + 1].y, 12,
+        );
+      }
+      const nextGeometry = new geometry.constructor();
+      nextGeometry.setAttribute("position", new positionsAttr.constructor(positions, 3));
+      nextGeometry.userData.breachlineNearVision = true;
+      this.visibilityMesh.geometry = nextGeometry;
+      geometry.dispose();
     };
 
     const originalThrowGrenade = game.throwGrenade.bind(game);
@@ -886,6 +956,7 @@
     window.addEventListener("blur", clearGadget);
 
     applyLayout(0);
+    applyActorRadius(game);
     applyWeaponVisual(game.player, game.player.weapon.id);
     game.bots.forEach((bot) => applyWeaponVisual(bot, bot.weapon.id));
     game.updateCameraFrustum();

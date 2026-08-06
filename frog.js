@@ -22,7 +22,7 @@
     };
     const vec = (x = 0, y = 0) => new game.player.pos.constructor(x, y);
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const ATTACHED_VISION_RADIUS = 280;
+    const ATTACHED_VISION_RADIUS = Math.round(920 * 0.33); // 시야 최대 거리(920)의 33% → 304
     const TONGUE_PULL_SPEED = 260;
     const MIN_TONGUE_LENGTH = 48;
     const AUTO_BUBBLE_INTERVAL = 0.32;

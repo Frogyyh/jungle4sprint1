@@ -19,17 +19,18 @@
     const operator = () => window.findBreachlineOperator(game.activeOperatorId || game.selectedOperatorId);
     const isOperator = (id) => game.activeOperatorId === id;
     const SPECIAL_COOLDOWN = 5;
-    const GUN_KATA_RADIUS = 88;
+    const GUN_KATA_RADIUS = 176; // 원형 공격 범위 2배 (기존 88)
+    const GUN_KATA_DAMAGE = 50;
     const SHIELD_VIEW_DEGREES = 20;
     const SHIELD_BLOCK_HALF_ANGLE = Math.PI / 4;
 
     const WEAPONS = Object.freeze({
       gunslinger: { id: "dual_pistols", name: "DUAL PISTOLS", damage: 15, pellets: 1, rpm: 800, spreadDeg: 4, magSize: 30, reserve: 9999, reload: 2.5, range: 720, projectileSpeed: 1450, color: 0xffd166 },
-      bulwark: { id: "shield_pistol", name: "SHIELD & PISTOL", damage: 10, pellets: 1, rpm: 250, spreadDeg: 5, magSize: 20, reserve: 9999, reload: 2.5, range: 540, projectileSpeed: 950, color: 0x7ea8ff },
+      bulwark: { id: "shield_pistol", name: "SHIELD & PISTOL", damage: 10, pellets: 1, rpm: 375, spreadDeg: 5, magSize: 20, reserve: 9999, reload: 2.5, range: 540, projectileSpeed: 950, color: 0x7ea8ff },
       sentinel: { id: "railgun", name: "RAILGUN", damage: 40, pellets: 1, rpm: 45, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 580, projectileSpeed: 1, color: 0x55f0b0 },
       soldier: { id: "rifle", name: "ASSAULT RIFLE", damage: 20, pellets: 1, rpm: 420, spreadDeg: 4.5, magSize: 30, reserve: 9999, reload: 2.5, range: 1040, projectileSpeed: 1500, color: 0x6de6df },
       reaper: { id: "scythe", name: "GREAT SCYTHE", damage: 30, pellets: 1, rpm: 80, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 116, projectileSpeed: 1, color: 0xc59bff },
-      hunter: { id: "shotgun", name: "DOUBLE BARREL", damage: 20, pellets: 5, rpm: 150, spreadDeg: 18, magSize: 2, reserve: 9999, reload: 2.5, range: 470, projectileSpeed: 1120, color: 0xffab63 },
+      hunter: { id: "shotgun", name: "DOUBLE BARREL", damage: 24, pellets: 5, rpm: 150, spreadDeg: 18, magSize: 2, reserve: 9999, reload: 2.5, range: 470, projectileSpeed: 1120, color: 0xffab63 },
       ninja: { id: "katana", name: "KATANA / DAGGERS", damage: 30, pellets: 1, rpm: 105, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 105, projectileSpeed: 1, color: 0xff5f6d },
       sniper: { id: "bolt_action", name: "BOLT-ACTION RIFLE", damage: 80, pellets: 1, rpm: 67, spreadDeg: 1, magSize: 1, reserve: 9999, reload: 0.9, range: 1420, projectileSpeed: 2200, color: 0x9ef0ff },
       demolitionist: { id: "grenade_launcher", name: "6-SHOT GRENADE LAUNCHER", damage: 40, pellets: 1, rpm: 90, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 780, projectileSpeed: 620, color: 0xffa8f0 },
@@ -129,6 +130,8 @@
       game._meleeSwing = null;
       game._revealUntil = 0;
       game._gunHand = 1;
+      game._gunKataUsedThisRound = false; // 건카타: 라운드당 1회, 처치 시 충전
+      game.player.radius = 20; // 피격판정 통일 (시각 스프라이트 대비 원활한 판정)
       clearSummons();
       clearOperatorFx();
 
@@ -618,9 +621,9 @@
       originalExplode(grenade);
       if (grenade.ninjaSmoke && this.smokes.length > smokeCount) {
         const smoke = this.smokes[this.smokes.length - 1];
-        smoke.radius = 225;
-        smoke.endAt = this.now + 5;
-        smoke.mesh.scale.setScalar(1.5);
+        smoke.radius = NINJA_SMOKE_RADIUS;
+        smoke.endAt = this.now + NINJA_SMOKE_DURATION;
+        smoke.mesh.scale.setScalar(NINJA_SMOKE_RADIUS / 150);
       }
       if (grenade.type === "flash") showFlashBurst(grenade);
       if (grenade.type === "smoke" && this.smokes.length > smokeCount) {
@@ -742,8 +745,19 @@
 
       const direction = targetPos.clone().sub(origin).normalize();
       const pos = origin.clone().add(direction.clone().multiplyScalar(32));
-      const mesh = createEffectMesh(0xffa8f0, 0.32);
+      // 비행 식별을 위해 유탄을 크게 만들고 밝은 코어를 얹는다.
+      const mesh = createEffectMesh(0xffa8f0, 0.5);
       mesh.position.set(pos.x, pos.y, 18);
+      const core = game.player.body.clone(false);
+      core.geometry = game.player.body.geometry.clone();
+      core.material = game.player.body.material.clone();
+      core.material.color.setHex(0xfff0ff);
+      core.material.transparent = true;
+      core.material.opacity = 0.95;
+      core.material.depthWrite = false;
+      core.scale.setScalar(0.16);
+      core.position.z = 1;
+      mesh.add(core);
       game.fxGroup.add(mesh);
       game.grenades.push({
         id: Date.now() + Math.random(),
@@ -754,6 +768,8 @@
         speed: 620,
         directFire: true, // 투척 물리/신관 없이 직선 비행 → 착탄 즉시 폭발
         mesh,
+        prevPos: pos.clone(),
+        trailAt: 0,
       });
       game.canvas.dataset.lastLauncherShot = `${Math.round(targetPos.x)}:${Math.round(targetPos.y)}`;
     };
@@ -795,6 +811,15 @@
         }
         grenade.pos.y = nextY.y;
         grenade.mesh.position.set(grenade.pos.x, grenade.pos.y, 16);
+        // 비행 트레일 (잔상)
+        if (this.now >= (grenade.trailAt || 0)) {
+          grenade.trailAt = this.now + 0.03;
+          createWorldStrip(grenade.prevPos, grenade.pos.clone(), 2.4, 0xffa8f0, {
+            duration: 0.16,
+            opacity: 0.8,
+          });
+          grenade.prevPos.copy(grenade.pos);
+        }
       }
       originalUpdateGrenades(dt);
       for (const grenade of direct) this.grenades.push(grenade);
@@ -845,6 +870,11 @@
 
     const startDash = (kind) => {
       const key = `${kind}-dash`;
+      // 건카타: 라운드당 1회. 적 처치 시 충전된다. (쿨다운과 무관하게 우선 차단)
+      if (kind === "gunslinger" && game._gunKataUsedThisRound) {
+        game.showToast("GUN KATA // 처치 시 충전");
+        return;
+      }
       if (!abilityReady(key)) {
         game.showToast(`DASH ${cooldownRemaining(key).toFixed(1)}s`);
         return;
@@ -856,7 +886,15 @@
         || game.mouse.world.clone().sub(game.player.pos);
       if (target.lengthSq() < 1) target.set(Math.cos(game.player.dir), Math.sin(game.player.dir));
       target.normalize();
-      beginCooldown(key, SPECIAL_COOLDOWN);
+      // 헌터 구르기: 쿨다운 3초 + 즉시 재장전
+      const dashCooldown = kind === "hunter" ? 3 : SPECIAL_COOLDOWN;
+      beginCooldown(key, dashCooldown);
+      if (kind === "hunter") {
+        game.player.reloadStartedAt = 0;
+        game.player.reloadUntil = 0;
+        game.player.ammo = game.player.weapon.magSize;
+      }
+      if (kind === "gunslinger") game._gunKataUsedThisRound = true;
       game._operatorDash = {
         kind, direction: target, startedAt: game.now, until: game.now + (kind === "gunslinger" ? 0.5 : 0.34),
         speed: kind === "gunslinger" ? 760 : 900, hit: new Set(), invulnerable: kind === "hunter",
@@ -1141,7 +1179,7 @@
         game._summons.push({
           pos,
           mesh,
-          hp: 25,
+          hp: 10, // 해골 체력 10 (기존 25)
           nextDamageAt: 0,
           expireAt: game.now + 20,
           swingAt: 0,
@@ -1202,21 +1240,69 @@
       game.showToast(`THERMAL VISION // ${REVEAL_DURATION.toFixed(0)}s`);
     };
 
-    const useNinjaSmoke = () => {
-      if (!abilityReady("ninja-smoke")) return;
-      beginCooldown("ninja-smoke", SPECIAL_COOLDOWN);
-      const previous = game.player.smokeGrenades;
-      game.player.smokeGrenades = 1;
-      game.throwGrenade("smoke", game.player, game.player.pos.clone().add(vector(1, 0)));
-      const grenade = game.grenades[game.grenades.length - 1];
-      if (grenade) {
-        grenade.ninjaSmoke = true;
-        grenade.fuse = 0.03;
-        grenade.initialFuse = 0.03;
-        grenade.vel.set(0, 0);
+    const NINJA_BLINK_DISTANCE = 260;
+    const NINJA_SMOKE_RADIUS = 225;
+    const NINJA_SMOKE_DURATION = 5;
+
+    /** 지정 지점에 닌자 강화 연막(반경 225 · 5초)을 즉시 생성한다. */
+    const spawnNinjaSmokeAt = (point) => {
+      const mesh = createEffectMesh(0x9bb5ff, 0.3);
+      mesh.position.set(point.x, point.y, 18);
+      game.fxGroup.add(mesh);
+      game.explode({
+        type: "smoke",
+        pos: point.clone(),
+        owner: game.player,
+        ninjaSmoke: true,
+        mesh,
+      });
+    };
+
+    const useNinjaBlink = () => {
+      if (!abilityReady("ninja-smoke")) {
+        game.showToast(`NINJA BLINK ${cooldownRemaining("ninja-smoke").toFixed(1)}s`);
+        return;
       }
-      game.player.smokeGrenades = previous;
-      game.showToast("NINJA SMOKE // R225 · 5s");
+      beginCooldown("ninja-smoke", SPECIAL_COOLDOWN);
+      // 순간이동 방향: 현재 누르는 WASD 방향, 입력 없으면 마지막 이동/조준 방향.
+      const direction = getWasmDir()
+        || (game._lastMoveDir ? game._lastMoveDir.clone() : null)
+        || vector(Math.cos(game.player.dir), Math.sin(game.player.dir));
+      direction.normalize();
+
+      // 이동 목표: 맵 경계 안으로 클램프
+      const target = game.player.pos.clone().add(direction.clone().multiplyScalar(NINJA_BLINK_DISTANCE));
+      target.x = clamp(target.x, -1282 + game.player.radius, 1282 - game.player.radius);
+      target.y = clamp(target.y, -882 + game.player.radius, 882 - game.player.radius);
+
+      // 장애물(벽) 예외 처리: 막히면 주변에서 가장 가까운 자유 지점 탐색
+      let landing = target;
+      if (game.collides(target, game.player.radius)) {
+        landing = null;
+        for (const radius of [28, 56, 84, 112, 140]) {
+          for (let index = 0; index < 16; index++) {
+            const angle = index / 16 * Math.PI * 2;
+            const candidate = target.clone().add(
+              vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(radius),
+            );
+            if (!game.collides(candidate, game.player.radius)) {
+              landing = candidate;
+              break;
+            }
+          }
+          if (landing) break;
+        }
+        landing = landing || game.player.pos.clone();
+      }
+
+      game.player.pos.copy(landing);
+      game.visibilityDirty = true;
+      game.player.syncMesh();
+      spawnNinjaSmokeAt(landing);
+      createRangeRing(game.player, 40, 0x9bb5ff, 0.3, 0.5);
+      createPulseDisc(game.player, NINJA_SMOKE_RADIUS, 0x9bb5ff, 0.5, 0.08);
+      game.canvas.dataset.ninjaBlink = `${Math.round(landing.x)}:${Math.round(landing.y)}`;
+      game.showToast("NINJA BLINK // SMOKE");
     };
 
     const FLASH_SHIELD_RANGE = 260;
@@ -1270,7 +1356,7 @@
       else if (isOperator("bulwark")) useFlashShield();
       else if (isOperator("reaper")) summonUndead();
       else if (isOperator("hunter")) startDash("hunter");
-      else if (isOperator("ninja")) useNinjaSmoke();
+      else if (isOperator("ninja")) useNinjaBlink();
       else if (!isOperator("frog")) game.showToast("NO ACTIVE ABILITY");
     };
 
@@ -1315,13 +1401,23 @@
       const before = target.hp;
       originalDamageActor(source, target, amount);
       if (target.hp < before) target.lastDamageAt = this.now;
+      // 건카타 충전: 존 익이 적을 처치하면 재사용 가능 상태로 되돌린다.
+      if (source === this.player && isOperator("gunslinger") && !target.alive && target.hp < before) {
+        if (this._gunKataUsedThisRound) {
+          this._gunKataUsedThisRound = false;
+          this.showToast("GUN KATA // READY");
+          this.canvas.dataset.gunKataRefresh = String(Math.round(this.now * 100) / 100);
+        }
+      }
     };
 
     const originalMoveActor = game.moveActor.bind(game);
     game.moveActor = function moveWithOperatorSpeed(actor, delta) {
-      const movement = actor === this.player && isOperator("sniper") && !this._operatorForcedMove
-        ? delta.clone().multiplyScalar(0.75)
-        : delta;
+      let movement = delta;
+      if (actor === this.player && !this._operatorForcedMove) {
+        if (isOperator("sniper")) movement = delta.clone().multiplyScalar(0.75);
+        else if (isOperator("ninja") && this.isInsideSmoke(this.player.pos)) movement = delta.clone().multiplyScalar(1.5);
+      }
       originalMoveActor(actor, movement);
     };
 
@@ -1355,7 +1451,7 @@
         for (const target of this.bots) {
           if (!target.alive || dash.hit.has(target) || target.pos.distanceTo(this.player.pos) > GUN_KATA_RADIUS) continue;
           dash.hit.add(target);
-          this.damageActor(this.player, target, 40);
+          this.damageActor(this.player, target, GUN_KATA_DAMAGE);
         }
         const progress = clamp((this.now - dash.startedAt) / Math.max(0.01, dash.until - dash.startedAt), 0, 1);
         this.player.mesh.rotation.z += progress * Math.PI * 8;
@@ -1463,7 +1559,8 @@
         } else {
           const nav = summon.nav;
           const targetMoved = !nav.targetPos || nav.targetPos.distanceToSquared(target.pos) > 52 * 52;
-          if (nav.targetId !== target.id || targetMoved || game.now >= nav.nextRepathAt || nav.index >= nav.path.length) {
+          // 재경로는 쿨다운(0.38s) 안에 한 번만 수행한다. (이전: 매 프레임 A* → 프리징)
+          if (game.now >= nav.nextRepathAt && (nav.targetId !== target.id || targetMoved || nav.index >= nav.path.length)) {
             nav.path = findSummonPath(summon.pos, target.pos);
             nav.index = 0;
             nav.targetId = target.id;
@@ -1507,11 +1604,16 @@
             if (!game.collides(candidateX, 12)) summon.pos.x = candidateX.x;
             const candidateY = summon.pos.clone().add(vector(0, desired.y));
             if (!game.collides(candidateY, 12)) summon.pos.y = candidateY.y;
-            if (summon.pos.distanceToSquared(previous) < 0.05) nav.nextRepathAt = 0;
+            // 벽에 갇힘 감지 시 즉시 재경로 대신 0.25초 스로틀 (프리징 방지)
+            if (summon.pos.distanceToSquared(previous) < 0.05) {
+              nav.nextRepathAt = Math.max(nav.nextRepathAt, game.now + 0.25);
+            }
           }
 
           if (game.now - nav.anchorAt >= 0.42) {
-            if (summon.pos.distanceToSquared(nav.anchor) < 4 * 4) nav.nextRepathAt = 0;
+            if (summon.pos.distanceToSquared(nav.anchor) < 4 * 4) {
+              nav.nextRepathAt = Math.max(nav.nextRepathAt, game.now + 0.25);
+            }
             nav.anchor.copy(summon.pos);
             nav.anchorAt = game.now;
           }
@@ -1539,6 +1641,163 @@
       game.canvas.dataset.undeadPathNodes = game._summons.map((summon) => Math.max(0, summon.nav.path.length - summon.nav.index)).join(",");
     };
 
+    // 적 AI가 해골 소환수를 위협으로 인식해 사격하게 한다.
+    const SUMMON_COMBAT_RANGE = 640;
+    const nearestSummonThreat = (bot) => {
+      let best = null;
+      let bestDistance = Infinity;
+      for (const summon of game._summons) {
+        const distance = summon.pos.distanceTo(bot.pos);
+        if (distance >= bestDistance || distance > SUMMON_COMBAT_RANGE) continue;
+        if (game.rayBlocked(bot.pos, summon.pos)) continue;
+        bestDistance = distance;
+        best = summon;
+      }
+      return best;
+    };
+
+    const botFightSummon = (bot, summon, dt) => {
+      const relative = summon.pos.clone().sub(bot.pos);
+      const distance = relative.length() || 1;
+      bot.dir = Math.atan2(relative.y, relative.x);
+      let movement;
+      if (distance > 300) movement = relative.clone().normalize();
+      else movement = vector(-relative.y, relative.x).normalize().multiplyScalar(bot.strafe);
+      game.moveBot(bot, dt, movement);
+      if (game.now >= (bot.reactionAt || 0)) {
+        game.fire(bot, bot.dir + game.rng.angle((6 * Math.PI) / 180));
+        bot.reactionAt = game.now + game.rng.range(0.6, 1.0);
+      }
+    };
+
+    const originalUpdateBots = game.updateBots.bind(game);
+    game.updateBots = function updateBotsWithSummonCombat(dt) {
+      if (game._summons.length) {
+        const engaged = [];
+        for (const bot of this.bots) {
+          if (!bot.alive || bot.flashedUntil > this.now) continue;
+          const summon = nearestSummonThreat(bot);
+          if (!summon) continue;
+          engaged.push(bot);
+          botFightSummon(bot, summon, dt);
+        }
+        if (engaged.length) {
+          // 교전 중인 봇을 잠시 제외하고 나머지 AI를 돌린다.
+          const held = [];
+          for (const bot of engaged) {
+            const index = this.bots.indexOf(bot);
+            if (index >= 0) {
+              held.push([bot, index]);
+              this.bots.splice(index, 1);
+            }
+          }
+          originalUpdateBots(dt);
+          for (const [bot, index] of held) {
+            this.bots.splice(Math.min(index, this.bots.length), 0, bot);
+            // 슬로우 링 색상(개구리) 보정
+            if (bot.ring?.material) {
+              bot.ring.material.color.setHex(bot.slowUntil > this.now ? 0x8ab4ff : 0xffb0ac);
+            }
+          }
+          return;
+        }
+      }
+      originalUpdateBots(dt);
+    };
+
+    // 소환수도 총알에 맞아 죽는다. (적 팀 투사체만)
+    const SUMMON_HIT_RADIUS = 16;
+    const originalUpdateProjectiles = game.updateProjectiles.bind(game);
+    game.updateProjectiles = function updateProjectilesHittingSummons(dt) {
+      originalUpdateProjectiles(dt);
+      if (!game._summons.length) return;
+      for (let index = this.projectiles.length - 1; index >= 0; index--) {
+        const projectile = this.projectiles[index];
+        if (!projectile || projectile.source?.team !== "enemy") continue;
+        for (let summonIndex = game._summons.length - 1; summonIndex >= 0; summonIndex--) {
+          const summon = game._summons[summonIndex];
+          if (summon.pos.distanceTo(projectile.pos) > SUMMON_HIT_RADIUS) continue;
+          summon.hp -= projectile.damage;
+          this.removeProjectile(index);
+          if (summon.hp <= 0) {
+            for (let burst = 0; burst < 6; burst++) {
+              const angle = burst / 6 * Math.PI * 2;
+              const dir = vector(Math.cos(angle), Math.sin(angle));
+              createWorldStrip(
+                summon.pos.clone(),
+                summon.pos.clone().add(dir.clone().multiplyScalar(18)),
+                3,
+                0x8d7bff,
+                { duration: 0.2, opacity: 0.8 },
+              );
+            }
+            removeSummon(summonIndex);
+          }
+          break;
+        }
+      }
+    };
+
+    // 섬광 피격 시 캐릭터 주변에 남은 지속시간을 보여주는 점멸 링
+    // (다른 플레이어가 "섬광에 맞았다 + 얼마나 남았는지"를 식별할 수 있다)
+    const FLASH_HALO_DOTS = 12;
+    const FLASH_HALO_RADIUS = 27;
+    const FLASH_HALO_DURATION = 1; // 섬광탄 지속 시간(초) 기준
+    const flashHalos = new Map(); // actor -> { group, dots }
+
+    const ensureFlashHalo = (actor) => {
+      let halo = flashHalos.get(actor);
+      if (halo) return halo;
+      const group = new game.fxGroup.constructor();
+      const dots = [];
+      for (let index = 0; index < FLASH_HALO_DOTS; index++) {
+        const dot = game.player.body.clone(false);
+        dot.geometry = game.player.body.geometry.clone();
+        dot.material = game.player.body.material.clone();
+        dot.material.color.setHex(0xffe066);
+        dot.material.transparent = true;
+        dot.material.opacity = 0.95;
+        dot.material.depthWrite = false;
+        dot.scale.setScalar(0.16);
+        dots.push(dot);
+        group.add(dot);
+      }
+      game.fxGroup.add(group);
+      halo = { group, dots };
+      flashHalos.set(actor, halo);
+      return halo;
+    };
+    game._flashHalos = flashHalos; // 디버그/테스트용 노출
+
+    const syncFlashHalos = () => {
+      for (const actor of [game.player, ...game.bots]) {
+        if (actor.alive && actor.flashedUntil > game.now) ensureFlashHalo(actor);
+      }
+      for (const [actor, halo] of [...flashHalos]) {
+        const active = actor.alive && actor.flashedUntil > game.now;
+        if (!active) {
+          game.fxGroup.remove(halo.group);
+          halo.group.traverse((part) => {
+            part.geometry?.dispose?.();
+            part.material?.dispose?.();
+          });
+          flashHalos.delete(actor);
+          continue;
+        }
+        const fraction = clamp((actor.flashedUntil - game.now) / FLASH_HALO_DURATION, 0, 1);
+        const visibleCount = Math.max(1, Math.ceil(FLASH_HALO_DOTS * fraction));
+        halo.group.position.set(actor.pos.x, actor.pos.y, 0);
+        halo.group.rotation.z += 0.02; // 남은 시간을 읽기 쉽게 천천히 회전
+        const pulse = 1 + Math.sin(game.now * 6) * 0.08;
+        halo.group.scale.set(pulse, pulse, 1);
+        halo.dots.forEach((dot, index) => {
+          const angle = index / FLASH_HALO_DOTS * Math.PI * 2;
+          dot.position.set(Math.cos(angle) * FLASH_HALO_RADIUS, Math.sin(angle) * FLASH_HALO_RADIUS, 26);
+          dot.visible = index < visibleCount;
+        });
+      }
+    };
+
     const originalStep = game.step.bind(game);
     game.step = function operatorStep(dt) {
       originalStep(dt);
@@ -1550,6 +1809,7 @@
       if (isOperator("sentinel") && this.player.alive && this._revealUntil > this.now) {
         this.player.ring.material.color.setHex(Math.sin(this.now * 11) > 0 ? 0xff3b45 : 0xffffff);
       }
+      syncFlashHalos();
       updateSummons(dt);
       updateOperatorFx();
       updateMeleeAnimation();
@@ -1567,6 +1827,9 @@
       if (["reaper", "ninja"].includes(selected.id)) {
         ui.ammo.textContent = "∞";
         ui.reserve.textContent = "∞";
+      } else if (this.player.reserve >= 9999) {
+        // 무제한 장탄 무기는 9999 대신 현재 최대 장탄수를 표시한다. (예: 30/30)
+        ui.reserve.textContent = `${this.player.weapon.magSize}`;
       }
       ui.fragCount.textContent = `${this.player.fragGrenades || 0}`;
       ui.flashCount.textContent = `${this.player.flashGrenades || 0}`;
