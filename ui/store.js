@@ -54,79 +54,19 @@ const member = (name, team, ready = false, characterId = null) => ({
   characterId,
 });
 
-const SEED_ROOMS = [
-  {
-    id: "r1",
-    title: "초보만 들어와요",
-    host: "야간투시경",
-    capacity: 4,
-    mapId: "crossroads",
-    members: [member("야간투시경", "A", false, "soldier"), member("탄창", "B", true, "gunslinger")],
-  },
-  {
-    id: "r2",
-    title: "2대2 빡겜 구합니다",
-    host: "브리치",
-    capacity: 4,
-    password: "1234",
-    mapId: "offset",
-    members: [
-      member("브리치", "A", false, "sentinel"),
-      member("각도장인", "A", true, "bulwark"),
-      member("연막탄", "B", true, "ninja"),
-    ],
-  },
-  {
-    id: "r3",
-    title: "샷건만 쓰는 방",
-    host: "근접전문",
-    capacity: 4,
-    mapId: "open-lanes",
-    members: [
-      member("근접전문", "A", false, "hunter"),
-      member("돌격대장", "A", true, "hunter"),
-      member("문지기", "B", true, "hunter"),
-      member("코너캠퍼", "B", true, "hunter"),
-    ],
-  },
-  {
-    id: "r4",
-    title: "디스코드 하실분",
-    host: "나이트폴",
-    capacity: 4,
-    mapId: "crossroads",
-    members: [member("나이트폴", "A", false, null)],
-  },
-  {
-    id: "r5",
-    title: "그냥 편하게 한판",
-    host: "스모크장인",
-    capacity: 4,
-    password: "9876",
-    mapId: "open-lanes",
-    members: [member("스모크장인", "A", false, "demolitionist"), member("개구리", "B", true, "frog")],
-  },
-  {
-    id: "r6",
-    title: "캐릭터 연습중",
-    host: "플래시뱅",
-    capacity: 2,
-    mapId: "offset",
-    members: [member("플래시뱅", "A", false, "ninja")],
-  },
-];
-
+/* 방 목록은 비어 있는 상태에서 시작한다. 목업 방은 두지 않는다 —
+   실제로 만든 방만 보여야 목록·정원·비밀번호 흐름을 그대로 확인할 수 있다. */
 export function loadRooms() {
   const raw = sessionStorage.getItem(ROOMS_KEY);
   if (!raw) {
-    sessionStorage.setItem(ROOMS_KEY, JSON.stringify(SEED_ROOMS));
-    return structuredClone(SEED_ROOMS);
+    sessionStorage.setItem(ROOMS_KEY, "[]");
+    return [];
   }
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : structuredClone(SEED_ROOMS);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return structuredClone(SEED_ROOMS);
+    return [];
   }
 }
 

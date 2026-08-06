@@ -288,13 +288,61 @@
         color: #4e6872;
       }
 
-      /* 방장이 우클릭으로 내보낼 수 있는 자리 — 올려두면 붉게 표시된다. */
+      /* 방장이 내보낼 수 있는 자리 — 올려두면 붉게 표시된다. */
       .slot.kickable {
         cursor: context-menu;
       }
 
       .slot.kickable:hover {
         border-color: var(--red);
+      }
+
+      /* READY 표시 위에 1초 머무는 동안 차오르는 눈금.
+         다 차면 그 자리에 내보내기 버튼이 뜬다. */
+      .slot-ready {
+        position: relative;
+      }
+
+      .slot-ready.holding::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -4px;
+        height: 2px;
+        background: var(--red);
+        transform-origin: left;
+        animation: kick-hold 1s linear forwards;
+      }
+
+      @keyframes kick-hold {
+        from {
+          transform: scaleX(0);
+        }
+        to {
+          transform: scaleX(1);
+        }
+      }
+
+      .slot-kick {
+        flex: none;
+        padding: 5px 9px;
+        border: 1px solid var(--red);
+        color: var(--red);
+        background: transparent;
+        font-family: inherit;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        cursor: pointer;
+        transition: 0.18s ease;
+      }
+
+      .slot-kick:hover,
+      .slot-kick:focus-visible {
+        color: #0b1116;
+        background: var(--red);
+        outline: none;
       }
 
       /* 맵 */
@@ -881,11 +929,51 @@
 
             slot.append(portrait, info, ready);
 
-            // 참여자 우클릭 = 내보내기. 방장만, 방장 자신은 대상이 아니다.
+            // 내보내기. 방장만, 방장 자신은 대상이 아니다.
             const canKick = isHost(room, me) && !isHost(room, m.name);
             if (canKick) {
               slot.classList.add("kickable");
-              slot.title = `우클릭하면 ${m.name} 님을 내보냅니다`;
+              slot.title = `READY 표시에 1초 동안 마우스를 올려두면 내보내기가 나타납니다`;
+
+              /* READY 위에 1초 머물면 그 자리에 내보내기 버튼이 나온다.
+                 지나가다 스치는 것으로는 뜨지 않게 하려고 시간을 둔다. */
+              const kick = document.createElement("button");
+              kick.type = "button";
+              kick.className = "slot-kick hidden";
+              kick.textContent = "내보내기";
+              kick.addEventListener("click", () => {
+                if (!confirm(`${m.name} 님을 내보낼까요?`)) return;
+                if (kickMember(roomId, me, m.name)) {
+                  render();
+                  toast(`${m.name} 을(를) 내보냈습니다.`);
+                }
+              });
+              slot.appendChild(kick);
+
+              let holdTimer = null;
+              const resetHold = () => {
+                clearTimeout(holdTimer);
+                holdTimer = null;
+                ready.classList.remove("holding");
+                ready.classList.remove("hidden");
+                kick.classList.add("hidden");
+              };
+              ready.addEventListener("mouseenter", () => {
+                if (holdTimer) return;
+                ready.classList.add("holding");
+                holdTimer = setTimeout(() => {
+                  holdTimer = null; // 다 찼다 — 아래 mouseleave 가 되돌리지 않게 비운다
+                  ready.classList.remove("holding");
+                  ready.classList.add("hidden");
+                  kick.classList.remove("hidden");
+                }, 1000);
+              });
+              // 1초를 채우기 전에 READY 를 벗어나면 처음부터 다시.
+              ready.addEventListener("mouseleave", () => {
+                if (holdTimer) resetHold();
+              });
+              // 자리 밖으로 나가면 원래대로. 버튼으로 옮겨 가는 동안은 유지된다.
+              slot.addEventListener("mouseleave", resetHold);
             }
             slot.addEventListener("contextmenu", (event) => {
               event.preventDefault(); // 브라우저 기본 메뉴 대신 안내를 띄운다
@@ -1108,14 +1196,16 @@
 
       charBack.addEventListener("click", showList);
 
+      /* 이미 캐릭터를 골랐더라도 항상 10인 목록부터 연다 —
+         다시 열었을 때 상세만 보이면 다른 캐릭터로 바꿀 길이 한 단계 멀어진다.
+         고른 캐릭터는 목록에서 강조(picked)로 남는다. */
       function openCharModal() {
         const mine = findMember(findRoom(roomId), me);
         picked = mine?.characterId
           ? window.resolveBreachlineOperatorId(mine.characterId)
           : null;
         charConfirm.disabled = !picked;
-        if (picked) showDetail(picked);
-        else showList();
+        showList();
         charModal.classList.remove("hidden");
       }
 
