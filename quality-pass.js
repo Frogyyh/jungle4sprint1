@@ -427,24 +427,37 @@
       game.canvas.dataset.predictedThrowPower = power.toFixed(2);
     };
 
-    // 폭탄마: 유탄 착탄 예정 지점에 폭발 반경(67) 고리와 도달 예상 시간을 표시한다.
+    // 폭탄마: 유탄 착탄 지점에 폭발 반경(67) 고리와 도달 예상 시간을 표시한다.
+    // 조준 중에는 마우스(착탄 예정 지점)를 따라가고, 발사 후에는 도착 지점에 고정된다.
     const LAUNCHER_RADIUS = 67;
     const updateLauncherPreview = () => {
-      const demolitionist = game.activeOperatorId === "demolitionist";
-      if (!demolitionist || game.phase !== "playing" || !game.player.alive) {
+      if (game.activeOperatorId !== "demolitionist") return; // 다른 캐릭터 프리뷰를 건드리지 않는다
+      if (game.phase !== "playing" || !game.player.alive) {
         ui.throwPreview.classList.add("hidden");
         return;
       }
-      const launcherRange = game.player.weapon?.range || 780;
       const launcherSpeed = game.player.weapon?.projectileSpeed || 620;
-      const aim = game.mouse.world.clone().sub(game.player.pos);
-      if (aim.lengthSq() < 1) aim.set(Math.cos(game.player.dir), Math.sin(game.player.dir));
-      const clamped = game.player.pos.clone().add(
-        aim.clone().normalize().multiplyScalar(Math.min(aim.length(), launcherRange)),
-      );
-      const screen = worldToScreen(clamped);
+
+      // 비행 중인 유탄이 있으면 착탄점에 고정 표시 (크로스헤어와 분리)
+      const inFlight = game.grenades.find((grenade) => grenade.directFire);
+      let center;
+      let travelTime;
+      if (inFlight) {
+        center = inFlight.targetPos;
+        const remaining = inFlight.pos.distanceTo(inFlight.targetPos);
+        travelTime = remaining / (inFlight.speed || launcherSpeed);
+      } else {
+        const launcherRange = game.player.weapon?.range || 780;
+        const aim = game.mouse.world.clone().sub(game.player.pos);
+        if (aim.lengthSq() < 1) aim.set(Math.cos(game.player.dir), Math.sin(game.player.dir));
+        center = game.player.pos.clone().add(
+          aim.clone().normalize().multiplyScalar(Math.min(aim.length(), launcherRange)),
+        );
+        travelTime = Math.min(aim.length(), launcherRange) / launcherSpeed;
+      }
+
+      const screen = worldToScreen(center);
       const size = Math.max(42, LAUNCHER_RADIUS * 2 * screen.unitsToPixels);
-      const travelTime = Math.min(aim.length(), launcherRange) / launcherSpeed;
       ui.throwPreview.classList.remove("hidden");
       ui.throwPreview.classList.remove("landing-only", "smoke");
       ui.throwPreview.style.setProperty("--telegraph", "#c58bff");
@@ -458,8 +471,9 @@
       const timer = ui.throwPreview.querySelector(".telegraph-time");
       if (icon) icon.textContent = "●";
       if (timer) timer.textContent = `IMPACT ${travelTime.toFixed(1)}s`;
-      game.canvas.dataset.launcherPreview = `${Math.round(clamped.x)}:${Math.round(clamped.y)}`;
+      game.canvas.dataset.launcherPreview = `${Math.round(center.x)}:${Math.round(center.y)}`;
       game.canvas.dataset.launcherPreviewTime = travelTime.toFixed(2);
+      game.canvas.dataset.launcherPreviewPinned = inFlight ? "true" : "false";
     };
 
     const clearGadget = () => {
@@ -572,14 +586,22 @@
       return actor.pos.x >= left && actor.pos.x <= right && actor.pos.y >= bottom && actor.pos.y <= top;
     };
 
-    // 부채꼴 외에 캐릭터 주변에 항상 보이는 원형 시야 (반경 200, 벽/연막 차단 적용)
-    const NEAR_VISION_RADIUS = 200;
+    // 부채꼴 외에 캐릭터 주변에 항상 보이는 원형 시야 (반경 100, 벽/연막 차단 적용).
+    // 아이언(시야각 20도 제한)에게도 동일하게 360도 원형으로 적용된다.
+    const NEAR_VISION_RADIUS = 100;
 
     const originalVisible = game.isVisible.bind(game);
     game.isVisible = function (observer, target, coneDegrees, distance) {
       if ((observer === this.player || target === this.player)) {
         const otherActor = observer === this.player ? target : observer;
         if (!isActorInsideCamera(otherActor)) return false;
+      }
+      // 연막 내부에서는 원형·부채꼴 시야 구분 없이 서로 식별 가능하다.
+      if (observer !== target && observer.alive && target.alive) {
+        const inSameSmoke = this.smokes.some((smoke) => smoke.endAt > this.now
+          && observer.pos.distanceTo(smoke.pos) < smoke.radius
+          && target.pos.distanceTo(smoke.pos) < smoke.radius);
+        if (inSameSmoke) return true;
       }
       // 원형 근접 시야: 부채꼴 각도와 무관하게 근처는 항상 인식한다.
       if (observer !== target && observer.alive && target.alive) {
@@ -597,6 +619,8 @@
     };
 
     // 시야 메시(부채꼴)에 원형 근접 시야를 덧붙인다.
+    // 아이언의 방패 시야 클램프(20도)에 영향받지 않도록 코어 traceVision 을 그대로 사용한다.
+    const coreTraceVision = game.traceVision.bind(game);
     const originalUpdateVisibility = game.updateVisibility.bind(game);
     game.updateVisibility = function updateVisibilityWithNearCircle() {
       originalUpdateVisibility();
@@ -612,7 +636,7 @@
       for (let index = 0; index <= segments; index++) {
         const angle = Math.PI * 2 * index / segments;
         const direction = this.player.pos.clone().set(Math.cos(angle), Math.sin(angle));
-        points.push(this.traceVision(this.player.pos, direction, NEAR_VISION_RADIUS));
+        points.push(coreTraceVision(this.player.pos, direction, NEAR_VISION_RADIUS));
       }
       for (let index = 0; index < segments; index++) {
         positions.push(

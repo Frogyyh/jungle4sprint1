@@ -22,16 +22,17 @@
     const GUN_KATA_RADIUS = 176; // 원형 공격 범위 2배 (기존 88)
     const GUN_KATA_DAMAGE = 50;
     const SHIELD_VIEW_DEGREES = 20;
-    const SHIELD_BLOCK_HALF_ANGLE = Math.PI / 4;
+    const SHIELD_BLOCK_HALF_ANGLE = Math.PI / 4; // 좌우 45도 (총 90도)
+    const SHIELD_BLOCK_RANGE = 200; // 방패 방호 유효 거리 (시각 표시와 일치)
 
     const WEAPONS = Object.freeze({
       gunslinger: { id: "dual_pistols", name: "DUAL PISTOLS", damage: 15, pellets: 1, rpm: 800, spreadDeg: 4, magSize: 30, reserve: 9999, reload: 2.5, range: 720, projectileSpeed: 1450, color: 0xffd166 },
       bulwark: { id: "shield_pistol", name: "SHIELD & PISTOL", damage: 10, pellets: 1, rpm: 375, spreadDeg: 5, magSize: 20, reserve: 9999, reload: 2.5, range: 540, projectileSpeed: 950, color: 0x7ea8ff },
       sentinel: { id: "railgun", name: "RAILGUN", damage: 40, pellets: 1, rpm: 45, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 580, projectileSpeed: 1, color: 0x55f0b0 },
       soldier: { id: "rifle", name: "ASSAULT RIFLE", damage: 20, pellets: 1, rpm: 420, spreadDeg: 4.5, magSize: 30, reserve: 9999, reload: 2.5, range: 1040, projectileSpeed: 1500, color: 0x6de6df },
-      reaper: { id: "scythe", name: "GREAT SCYTHE", damage: 30, pellets: 1, rpm: 80, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 116, projectileSpeed: 1, color: 0xc59bff },
+      reaper: { id: "scythe", name: "GREAT SCYTHE", damage: 40, pellets: 1, rpm: 80, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 128, projectileSpeed: 1, color: 0xc59bff },
       hunter: { id: "shotgun", name: "DOUBLE BARREL", damage: 24, pellets: 5, rpm: 150, spreadDeg: 18, magSize: 2, reserve: 9999, reload: 2.5, range: 470, projectileSpeed: 1120, color: 0xffab63 },
-      ninja: { id: "katana", name: "KATANA / DAGGERS", damage: 30, pellets: 1, rpm: 105, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 105, projectileSpeed: 1, color: 0xff5f6d },
+      ninja: { id: "katana", name: "KATANA / DAGGERS", damage: 40, pellets: 1, rpm: 105, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 118, projectileSpeed: 1, color: 0xff5f6d },
       sniper: { id: "bolt_action", name: "BOLT-ACTION RIFLE", damage: 80, pellets: 1, rpm: 67, spreadDeg: 1, magSize: 1, reserve: 9999, reload: 0.9, range: 1420, projectileSpeed: 2200, color: 0x9ef0ff },
       demolitionist: { id: "grenade_launcher", name: "6-SHOT GRENADE LAUNCHER", damage: 40, pellets: 1, rpm: 90, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 780, projectileSpeed: 620, color: 0xffa8f0 },
     });
@@ -132,6 +133,9 @@
       game._gunHand = 1;
       game._gunKataUsedThisRound = false; // 건카타: 라운드당 1회, 처치 시 충전
       game.player.radius = 20; // 피격판정 통일 (시각 스프라이트 대비 원활한 판정)
+      game._scytheThrow = null;
+      const scytheSource = game.player._weaponVisualRoot;
+      if (scytheSource) scytheSource.visible = true;
       clearSummons();
       clearOperatorFx();
 
@@ -360,14 +364,20 @@
       ));
     };
 
+    const MELEE_SWING_DURATION = 0.34;
+    const MELEE_ATTACK_DELAY = 0.32; // 스윙 종료 직후 즉시 재공격 가능
+
     const beginMeleeAnimation = (range, halfAngle, color) => {
+      // 사용할 때마다 휘두르는 방향을 번갈아 바꾼다 (우→좌 ↔ 좌→우)
+      game._meleeSwingSide = !game._meleeSwingSide;
       game._meleeSwing = {
         startedAt: game.now,
-        until: game.now + 0.34,
+        until: game.now + MELEE_SWING_DURATION,
         direction: game.player.dir,
         range,
         halfAngle,
         color,
+        side: game._meleeSwingSide ? 1 : -1,
         lastTrailAt: -Infinity,
         lastTip: null,
       };
@@ -392,7 +402,9 @@
       }
       const progress = clamp((game.now - swing.startedAt) / Math.max(0.01, swing.until - swing.startedAt), 0, 1);
       const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-      const localAngle = -swing.halfAngle + eased * swing.halfAngle * 2;
+      const localAngle = swing.side === 1
+        ? -swing.halfAngle + eased * swing.halfAngle * 2
+        : swing.halfAngle - eased * swing.halfAngle * 2;
       for (const piece of getWeaponPieces()) {
         const baseX = piece.userData.breachlineBaseX ?? piece.position.x;
         const baseY = (piece.userData.breachlineBaseY ?? piece.position.y) - 10;
@@ -647,7 +659,13 @@
 
     const meleeAttack = (damage, range, halfAngle) => {
       if (game.now < game.player.nextShotAt || !game.player.alive) return;
-      game.player.nextShotAt = game.now + 60 / game.player.weapon.rpm;
+      // 낫을 던진 상태에서는 근접 공격 불가
+      if (game._scytheThrow) {
+        game.showToast("SCYTHE FLYING // RETURNING");
+        return;
+      }
+      // 스윙 종료(0.34s) 직후 즉시 재공격 가능하도록 딜레이를 축소한다.
+      game.player.nextShotAt = game.now + MELEE_ATTACK_DELAY;
       game.player.shots++;
       beginMeleeAnimation(range, halfAngle, isOperator("reaper") ? 0xc59bff : 0xff5f6d);
       let hits = 0;
@@ -832,8 +850,8 @@
         return;
       }
       if (this._selectedGadget) return;
-      if (isOperator("reaper")) return meleeAttack(30, 116, Math.PI * 0.31);
-      if (isOperator("ninja")) return meleeAttack(30, 105, Math.PI * 0.29);
+      if (isOperator("reaper")) return meleeAttack(WEAPONS.reaper.damage, WEAPONS.reaper.range, Math.PI * 0.31);
+      if (isOperator("ninja")) return meleeAttack(WEAPONS.ninja.damage, WEAPONS.ninja.range, Math.PI * 0.29);
       if (isOperator("sentinel")) return fireRailgun();
       if (isOperator("demolitionist")) return fireLauncher();
       const shotsBefore = actor.shots;
@@ -853,6 +871,9 @@
         const perpendicular = vector(-direction.y, direction.x).multiplyScalar(7 * this._gunHand);
         muzzle = position.clone().add(perpendicular);
         this._gunHand *= -1;
+      } else if (weapon && (weapon.pellets || 1) > 1) {
+        // 다발 펠릿(샷건 등): 발사원에 가깝게 생성해 근거리에서도 전탄이 적중한다.
+        muzzle = position.clone().sub(direction.clone().multiplyScalar(6));
       }
       originalSpawnProjectile(source, muzzle, direction, weapon);
       const projectile = this.projectiles[this.projectiles.length - 1];
@@ -914,7 +935,7 @@
         game.showToast(`DAGGERS ${cooldownRemaining("daggers").toFixed(1)}s`);
         return;
       }
-      beginCooldown("daggers", SPECIAL_COOLDOWN);
+      beginCooldown("daggers", 1); // 수리검 딜레이 1초
       const weapon = { id: "dagger", name: "DAGGER", damage: 15, pellets: 1, rpm: 1, spreadDeg: 0, magSize: 1, reserve: 1, reload: 1, range: 720, projectileSpeed: 1050, color: 0xdffcff };
       for (const offset of [-0.08, 0, 0.08]) {
         const angle = game.player.dir + offset;
@@ -938,10 +959,109 @@
       game.player.fragGrenades = current;
     };
 
+    const SCYTHE_THROW_RANGE = 480;
+    const SCYTHE_OUT_SPEED = 950;
+    const SCYTHE_RETURN_SPEED = 1150;
+    const SCYTHE_HIT_BUFFER = 26;
+
+    // 사신 우클릭: 낫을 부메랑처럼 던진다 (벽 관통). 회수 전까지 근접 공격 불가.
+    const useScytheThrow = () => {
+      if (game._scytheThrow) {
+        game.showToast("SCYTHE FLYING // RETURNING");
+        return;
+      }
+      if (!game.player.alive || game.phase !== "playing") return;
+      game._meleeSwing = null;
+      const direction = vector(Math.cos(game.player.dir), Math.sin(game.player.dir));
+      const source = game.player._weaponVisualRoot;
+      let mesh = null;
+      if (source) {
+        mesh = source.clone(true);
+        mesh.traverse((part) => {
+          if (part.geometry) part.geometry = part.geometry.clone();
+          if (part.material && !Array.isArray(part.material)) part.material = part.material.clone();
+        });
+        mesh.position.set(game.player.pos.x, game.player.pos.y, 14);
+        game.fxGroup.add(mesh);
+        source.visible = false; // 손에 든 낫은 던졌다
+      }
+      game._scytheThrow = {
+        pos: game.player.pos.clone(),
+        dir: direction,
+        out: true,
+        traveled: 0,
+        hit: new Set(),
+        mesh,
+        rot: 0,
+      };
+      game.canvas.dataset.scytheThrown = "true";
+      game.showToast("SCYTHE THROWN");
+    };
+
+    const reacquireScythe = () => {
+      const thrown = game._scytheThrow;
+      if (!thrown) return;
+      if (thrown.mesh) {
+        game.fxGroup.remove(thrown.mesh);
+        thrown.mesh.traverse((part) => {
+          part.geometry?.dispose?.();
+          part.material?.dispose?.();
+        });
+      }
+      const source = game.player._weaponVisualRoot;
+      if (source) source.visible = true;
+      game._scytheThrow = null;
+      game.canvas.dataset.scytheThrown = "false";
+    };
+
+    const updateScytheThrow = (dt) => {
+      const thrown = game._scytheThrow;
+      if (!thrown) return;
+      if (!game.player.alive) {
+        reacquireScythe();
+        return;
+      }
+      const speed = thrown.out ? SCYTHE_OUT_SPEED : SCYTHE_RETURN_SPEED;
+      if (thrown.out) {
+        thrown.traveled += speed * dt;
+        thrown.pos.x += thrown.dir.x * speed * dt;
+        thrown.pos.y += thrown.dir.y * speed * dt;
+        if (thrown.traveled >= SCYTHE_THROW_RANGE) {
+          thrown.out = false;
+          game.showToast("SCYTHE RETURN");
+        }
+      } else {
+        const toPlayer = game.player.pos.clone().sub(thrown.pos);
+        const distance = toPlayer.length();
+        if (distance < 28) {
+          reacquireScythe();
+          return;
+        }
+        const back = toPlayer.normalize();
+        thrown.pos.x += back.x * speed * dt;
+        thrown.pos.y += back.y * speed * dt;
+      }
+      thrown.rot += dt * 14;
+      if (thrown.mesh) {
+        thrown.mesh.position.set(thrown.pos.x, thrown.pos.y, 14);
+        thrown.mesh.rotation.z = thrown.rot;
+      }
+      // 접촉 피해 (대상당 1회)
+      for (const bot of game.bots) {
+        if (!bot.alive || thrown.hit.has(bot)) continue;
+        if (bot.pos.distanceTo(thrown.pos) > SCYTHE_HIT_BUFFER + bot.radius) continue;
+        thrown.hit.add(bot);
+        game.player.hits++;
+        game.damageActor(game.player, bot, WEAPONS.reaper.damage);
+        createWorldStrip(thrown.pos.clone(), bot.pos.clone(), 4, 0xc59bff, { duration: 0.18, opacity: 0.85 });
+      }
+    };
+
     const useSecondary = () => {
       if (isOperator("gunslinger")) startDash("gunslinger");
       else if (isOperator("ninja")) fireDaggers();
       else if (isOperator("demolitionist")) throwDemoFrag();
+      else if (isOperator("reaper")) useScytheThrow();
       else game.showToast("NO SECONDARY ATTACK");
     };
 
@@ -1217,18 +1337,6 @@
     const REVEAL_DURATION = 7;
     const REVEAL_COOLDOWN = 15;
 
-    /** 레이(origin → origin+dir*dist)와 원형 연막의 충돌 거리. 없으면 null. */
-    const smokeRayHit = (origin, direction, distance, center, radius) => {
-      const dx = center.x - origin.x;
-      const dy = center.y - origin.y;
-      const projection = dx * direction.x + dy * direction.y;
-      if (projection < 0) return null;
-      const perpendicular = dx * dx + dy * dy - projection * projection;
-      if (perpendicular > radius * radius) return null;
-      const t = projection - Math.sqrt(radius * radius - perpendicular);
-      return t <= distance ? Math.max(0, t) : null;
-    };
-
     const useReveal = () => {
       if (!abilityReady("reveal")) {
         game.showToast(`SCAN ${cooldownRemaining("reveal").toFixed(1)}s`);
@@ -1240,7 +1348,8 @@
       game.showToast(`THERMAL VISION // ${REVEAL_DURATION.toFixed(0)}s`);
     };
 
-    const NINJA_BLINK_DISTANCE = 260;
+    const NINJA_DASH_SPEED = 780;
+    const NINJA_DASH_DURATION = 0.33;
     const NINJA_SMOKE_RADIUS = 225;
     const NINJA_SMOKE_DURATION = 5;
 
@@ -1258,51 +1367,32 @@
       });
     };
 
-    const useNinjaBlink = () => {
+    const useNinjaDash = () => {
       if (!abilityReady("ninja-smoke")) {
-        game.showToast(`NINJA BLINK ${cooldownRemaining("ninja-smoke").toFixed(1)}s`);
+        game.showToast(`NINJA DASH ${cooldownRemaining("ninja-smoke").toFixed(1)}s`);
         return;
       }
       beginCooldown("ninja-smoke", SPECIAL_COOLDOWN);
-      // 순간이동 방향: 현재 누르는 WASD 방향, 입력 없으면 마지막 이동/조준 방향.
+      // 대쉬 방향: 현재 누르는 WASD 방향, 입력 없으면 마지막 이동/조준 방향.
       const direction = getWasmDir()
         || (game._lastMoveDir ? game._lastMoveDir.clone() : null)
         || vector(Math.cos(game.player.dir), Math.sin(game.player.dir));
       direction.normalize();
-
-      // 이동 목표: 맵 경계 안으로 클램프
-      const target = game.player.pos.clone().add(direction.clone().multiplyScalar(NINJA_BLINK_DISTANCE));
-      target.x = clamp(target.x, -1282 + game.player.radius, 1282 - game.player.radius);
-      target.y = clamp(target.y, -882 + game.player.radius, 882 - game.player.radius);
-
-      // 장애물(벽) 예외 처리: 막히면 주변에서 가장 가까운 자유 지점 탐색
-      let landing = target;
-      if (game.collides(target, game.player.radius)) {
-        landing = null;
-        for (const radius of [28, 56, 84, 112, 140]) {
-          for (let index = 0; index < 16; index++) {
-            const angle = index / 16 * Math.PI * 2;
-            const candidate = target.clone().add(
-              vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(radius),
-            );
-            if (!game.collides(candidate, game.player.radius)) {
-              landing = candidate;
-              break;
-            }
-          }
-          if (landing) break;
-        }
-        landing = landing || game.player.pos.clone();
-      }
-
-      game.player.pos.copy(landing);
-      game.visibilityDirty = true;
-      game.player.syncMesh();
-      spawnNinjaSmokeAt(landing);
-      createRangeRing(game.player, 40, 0x9bb5ff, 0.3, 0.5);
+      game._operatorDash = {
+        kind: "ninja",
+        direction,
+        startedAt: game.now,
+        until: game.now + NINJA_DASH_DURATION,
+        speed: NINJA_DASH_SPEED,
+        hit: new Set(),
+        invulnerable: false,
+        nextFxAt: game.now,
+        smokeSpawned: false,
+      };
+      createRangeRing(game.player, game.player.radius + 9, 0x9bb5ff, 0.3, 0.5);
       createPulseDisc(game.player, NINJA_SMOKE_RADIUS, 0x9bb5ff, 0.5, 0.08);
-      game.canvas.dataset.ninjaBlink = `${Math.round(landing.x)}:${Math.round(landing.y)}`;
-      game.showToast("NINJA BLINK // SMOKE");
+      game.canvas.dataset.ninjaDash = String(Math.round(game.now * 100) / 100);
+      game.showToast("NINJA DASH");
     };
 
     const FLASH_SHIELD_RANGE = 260;
@@ -1315,9 +1405,8 @@
         return;
       }
       beginCooldown("flash-shield", SPECIAL_COOLDOWN);
-      const direction = getWasmDir()
-        || (game._lastMoveDir ? game._lastMoveDir.clone() : null)
-        || vector(Math.cos(game.player.dir), Math.sin(game.player.dir));
+      // 섬광방패는 아이언이 바라보고 있는(조준) 방향으로 전개한다.
+      const direction = vector(Math.cos(game.player.dir), Math.sin(game.player.dir));
       direction.normalize();
 
       let hits = 0;
@@ -1356,7 +1445,7 @@
       else if (isOperator("bulwark")) useFlashShield();
       else if (isOperator("reaper")) summonUndead();
       else if (isOperator("hunter")) startDash("hunter");
-      else if (isOperator("ninja")) useNinjaBlink();
+      else if (isOperator("ninja")) useNinjaDash();
       else if (!isOperator("frog")) game.showToast("NO ACTIVE ABILITY");
     };
 
@@ -1391,8 +1480,11 @@
       if (target === this.player && this._operatorDash?.invulnerable) return;
       if (target === this.player && isOperator("bulwark") && source?.pos) {
         const incoming = source.pos.clone().sub(target.pos);
+        const incomingDistance = incoming.length();
         const incomingAngle = Math.atan2(incoming.y, incoming.x);
-        if (Math.abs(angleDelta(incomingAngle, target.dir)) <= SHIELD_BLOCK_HALF_ANGLE) {
+        // 방패 방호: 정면 좌우 45도 + 유효 거리(200) 이내. (시각 범위와 일치)
+        if (incomingDistance <= SHIELD_BLOCK_RANGE
+          && Math.abs(angleDelta(incomingAngle, target.dir)) <= SHIELD_BLOCK_HALF_ANGLE) {
           this.showToast("SHIELD BLOCK");
           this.canvas.dataset.lastShieldBlock = this.now.toFixed(2);
           return;
@@ -1401,13 +1493,13 @@
       const before = target.hp;
       originalDamageActor(source, target, amount);
       if (target.hp < before) target.lastDamageAt = this.now;
-      // 건카타 충전: 존 익이 적을 처치하면 재사용 가능 상태로 되돌린다.
+      // 건카타 충전: 존 익이 적을 처치하면 쿨다운과 사용횟수를 즉시 초기화한다.
+      // 최대 1회 충전 — 여러 번 처치해도 1회분만 유지된다.
       if (source === this.player && isOperator("gunslinger") && !target.alive && target.hp < before) {
-        if (this._gunKataUsedThisRound) {
-          this._gunKataUsedThisRound = false;
-          this.showToast("GUN KATA // READY");
-          this.canvas.dataset.gunKataRefresh = String(Math.round(this.now * 100) / 100);
-        }
+        this._gunKataUsedThisRound = false;
+        this._operatorCooldowns["gunslinger-dash"] = 0;
+        this.showToast("GUN KATA // READY");
+        this.canvas.dataset.gunKataRefresh = String(Math.round(this.now * 100) / 100);
       }
     };
 
@@ -1482,6 +1574,18 @@
           dash.nextFxAt = this.now + 0.05;
           spawnAfterimage(this.player, pulse > 0.45 ? 0x9ef0ff : 0xffab63);
         }
+      } else if (dash.kind === "ninja") {
+        // 대쉬 종료 시점에 현재 위치에 강화 연막을 생성한다.
+        if (this.now >= dash.until && !dash.smokeSpawned) {
+          dash.smokeSpawned = true;
+          spawnNinjaSmokeAt(this.player.pos.clone());
+          createPulseDisc(this.player, NINJA_SMOKE_RADIUS, 0x9bb5ff, 0.5, 0.08);
+          this.canvas.dataset.ninjaSmokeAt = `${Math.round(this.player.pos.x)}:${Math.round(this.player.pos.y)}`;
+        }
+        if (this.now >= dash.nextFxAt) {
+          dash.nextFxAt = this.now + 0.05;
+          spawnAfterimage(this.player, 0x9bb5ff);
+        }
       }
       if (this.now >= dash.until) {
         this._operatorDash = null;
@@ -1492,11 +1596,17 @@
 
     const originalVisible = game.isVisible.bind(game);
     game.isVisible = function operatorVisibility(observer, target, coneDegrees, distance) {
+      // 닌자 패시브: 연막 안에 있는 모든 적은 절대 시야로 식별된다 (벽/연막 무시).
+      if (observer === this.player && isOperator("ninja") && target !== observer && target.alive) {
+        if (this.isInsideSmoke(target.pos) && target.pos.distanceTo(observer.pos) <= distance) {
+          return true;
+        }
+      }
       if (observer === this.player && isOperator("sentinel") && this._revealUntil > this.now) {
         const delta = target.pos.clone().sub(observer.pos);
+        // 투시 스캔: 벽과 연막 모두 투시한다.
         return target.alive && delta.length() <= distance
-          && Math.abs(angleDelta(Math.atan2(delta.y, delta.x), observer.dir)) <= coneDegrees * Math.PI / 360
-          && !this.smokeBlocks(observer.pos, target.pos);
+          && Math.abs(angleDelta(Math.atan2(delta.y, delta.x), observer.dir)) <= coneDegrees * Math.PI / 360;
       }
       const adjustedDistance = observer === this.player && isOperator("sniper") ? distance * 1.5 : distance;
       const adjustedCone = observer === this.player && isOperator("bulwark")
@@ -1514,16 +1624,9 @@
         const clampedAngle = this.player.dir + clamp(angleDelta(angle, this.player.dir), -halfView, halfView);
         adjustedDirection = vector(Math.cos(clampedAngle), Math.sin(clampedAngle));
       }
-      // RB-08 투시 스캔 중에는 시야 부채꼴이 벽에 잘리지 않게 한다.
-      // 연막 차단은 유지한다.
+      // RB-08 투시 스캔 중에는 시야 부채꼴이 벽·연막에 잘리지 않는다.
       if (isOperator("sentinel") && this._revealUntil > this.now && origin.distanceToSquared(this.player.pos) < 1) {
-        let range = distance;
-        for (const smoke of this.smokes) {
-          if (smoke.endAt <= this.now) continue;
-          const hit = smokeRayHit(origin, adjustedDirection, distance, smoke.pos, smoke.radius);
-          if (hit !== null && hit < range) range = hit;
-        }
-        return origin.clone().add(adjustedDirection.clone().multiplyScalar(range));
+        return origin.clone().add(adjustedDirection.clone().multiplyScalar(distance));
       }
       return originalTraceVision(origin, adjustedDirection, isOperator("sniper") ? distance * 1.5 : distance);
     };
@@ -1554,7 +1657,7 @@
             summon.swingAt = game.now;
             summon.swingDir = Math.atan2(delta.y, delta.x);
             summon.swingTrailAt = 0;
-            createRangeSector(summon.pos, summon.swingDir, 38, 0.9, 0xc59bff);
+            createRangeSector({ pos: summon.pos }, summon.swingDir, 38, 0.9, 0xc59bff);
           }
         } else {
           const nav = summon.nav;
@@ -1598,7 +1701,7 @@
           }
 
           if (desired.lengthSq() > 0.01) {
-            desired.normalize().multiplyScalar(82 * dt);
+            desired.normalize().multiplyScalar(164 * dt); // 소환수 이동속도 2배
             const previous = summon.pos.clone();
             const candidateX = summon.pos.clone().add(vector(desired.x, 0));
             if (!game.collides(candidateX, 12)) summon.pos.x = candidateX.x;
@@ -1705,18 +1808,58 @@
       originalUpdateBots(dt);
     };
 
-    // 소환수도 총알에 맞아 죽는다. (적 팀 투사체만)
+    // 세그먼트-원 충돌 판정. 코어 _p 는 투사체가 히트박스 내부에서 생성되면(근거리
+    // 점사) 놓치는 결함이 있어, 보정 패스에서 이 함수로 재검사한다.
     const SUMMON_HIT_RADIUS = 16;
+    const segmentCircleHit = (start, end, center, radius) => {
+      const sx = end.x - start.x;
+      const sy = end.y - start.y;
+      const lengthSq = sx * sx + sy * sy;
+      let t = 0;
+      if (lengthSq > 1e-9) {
+        t = ((center.x - start.x) * sx + (center.y - start.y) * sy) / lengthSq;
+        t = clamp(t, 0, 1);
+      }
+      const px = start.x + sx * t;
+      const py = start.y + sy * t;
+      const dx = center.x - px;
+      const dy = center.y - py;
+      return dx * dx + dy * dy <= radius * radius;
+    };
+
+    // 히트박스 판정 평준화: 모든 투사체(권총/샷건 펠릿 포함)에 동일한 완화 판정을
+    // 적용해, 시각(탄환 폭)과 히트박스가 어긋나 보이는 경우를 제거한다.
+    // 반경 +5 버퍼 + 코어가 놓치는 "근거리 내부 생성" 케이스 보정.
+    const PROJECTILE_HIT_BUFFER = 5;
     const originalUpdateProjectiles = game.updateProjectiles.bind(game);
-    game.updateProjectiles = function updateProjectilesHittingSummons(dt) {
+    game.updateProjectiles = function updateProjectilesWithFairHits(dt) {
+      for (const projectile of this.projectiles) {
+        projectile._prevPos = projectile.pos.clone();
+      }
       originalUpdateProjectiles(dt);
+
+      // 캐릭터 대상 보정 (모든 팀의 투사체에 동일 적용)
+      for (let index = this.projectiles.length - 1; index >= 0; index--) {
+        const projectile = this.projectiles[index];
+        if (!projectile?._prevPos) continue;
+        for (const target of [this.player, ...this.bots]) {
+          if (target === projectile.source || !target.alive) continue;
+          if (!segmentCircleHit(projectile._prevPos, projectile.pos, target.pos, target.radius + PROJECTILE_HIT_BUFFER)) continue;
+          projectile.source.hits++;
+          this.damageActor(projectile.source, target, projectile.damage);
+          this.removeProjectile(index);
+          break;
+        }
+      }
+
+      // 소환수도 총알에 맞아 죽는다. (적 팀 투사체만)
       if (!game._summons.length) return;
       for (let index = this.projectiles.length - 1; index >= 0; index--) {
         const projectile = this.projectiles[index];
         if (!projectile || projectile.source?.team !== "enemy") continue;
         for (let summonIndex = game._summons.length - 1; summonIndex >= 0; summonIndex--) {
           const summon = game._summons[summonIndex];
-          if (summon.pos.distanceTo(projectile.pos) > SUMMON_HIT_RADIUS) continue;
+          if (!segmentCircleHit(projectile._prevPos, projectile.pos, summon.pos, SUMMON_HIT_RADIUS + PROJECTILE_HIT_BUFFER)) continue;
           summon.hp -= projectile.damage;
           this.removeProjectile(index);
           if (summon.hp <= 0) {
@@ -1769,12 +1912,59 @@
     };
     game._flashHalos = flashHalos; // 디버그/테스트용 노출
 
+    // 아이언: 방패 방호 범위(정면 좌우 45도 · 200)를 아크로 상시 표시한다.
+    const SHIELD_ARC_DOTS = 10;
+    const shieldArc = { group: null, dots: [] };
+    const ensureShieldArc = () => {
+      if (shieldArc.group) return;
+      const group = new game.fxGroup.constructor();
+      const dots = [];
+      for (let index = 0; index < SHIELD_ARC_DOTS; index++) {
+        const dot = game.player.body.clone(false);
+        dot.geometry = game.player.body.geometry.clone();
+        dot.material = game.player.body.material.clone();
+        dot.material.color.setHex(0x9bc8ff);
+        dot.material.transparent = true;
+        dot.material.opacity = 0.5;
+        dot.material.depthWrite = false;
+        dot.scale.setScalar(0.13);
+        dots.push(dot);
+        group.add(dot);
+      }
+      group.visible = false;
+      game.fxGroup.add(group);
+      shieldArc.group = group;
+      shieldArc.dots = dots;
+    };
+    const syncShieldArc = () => {
+      ensureShieldArc();
+      const visible = isOperator("bulwark") && game.phase === "playing" && game.player.alive;
+      shieldArc.group.visible = visible;
+      if (!visible) return;
+      shieldArc.group.position.set(game.player.pos.x, game.player.pos.y, 0);
+      shieldArc.group.rotation.z = game.player.dir;
+      const pulse = 1 + Math.sin(game.now * 3.2) * 0.05;
+      shieldArc.group.scale.set(pulse, pulse, 1);
+      shieldArc.dots.forEach((dot, index) => {
+        const t = index / (SHIELD_ARC_DOTS - 1);
+        const angle = -SHIELD_BLOCK_HALF_ANGLE + t * SHIELD_BLOCK_HALF_ANGLE * 2;
+        dot.position.set(Math.cos(angle) * SHIELD_BLOCK_RANGE, Math.sin(angle) * SHIELD_BLOCK_RANGE, 25);
+      });
+    };
+    game._shieldArcState = shieldArc; // 디버그/테스트용 노출
+
     const syncFlashHalos = () => {
+      // 시야(부채꼴/원형) 안에 들어온 적에 한해서만 링을 표시한다. (자기 자신 제외)
       for (const actor of [game.player, ...game.bots]) {
-        if (actor.alive && actor.flashedUntil > game.now) ensureFlashHalo(actor);
+        if (actor === game.player) continue;
+        if (!actor.alive || actor.flashedUntil <= game.now) continue;
+        if (!game.isVisible(game.player, actor, 45, 920)) continue;
+        ensureFlashHalo(actor);
       }
       for (const [actor, halo] of [...flashHalos]) {
-        const active = actor.alive && actor.flashedUntil > game.now;
+        const active = actor.alive && actor.flashedUntil > game.now
+          && actor !== game.player
+          && game.isVisible(game.player, actor, 45, 920);
         if (!active) {
           game.fxGroup.remove(halo.group);
           halo.group.traverse((part) => {
@@ -1810,6 +2000,8 @@
         this.player.ring.material.color.setHex(Math.sin(this.now * 11) > 0 ? 0xff3b45 : 0xffffff);
       }
       syncFlashHalos();
+      syncShieldArc();
+      updateScytheThrow(dt);
       updateSummons(dt);
       updateOperatorFx();
       updateMeleeAnimation();
