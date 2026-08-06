@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "breachline",
+  "name": "vsc",
   "main": "server/worker.mjs",
   "compatibility_date": "2026-08-01",
   "assets": {

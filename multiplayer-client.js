@@ -187,6 +187,7 @@
         x: position.x,
         y: position.y,
         dir: Math.atan2(direction.y, direction.x),
+        weaponId: weapon?.id || source.weapon?.id || null,
       });
     };
 
@@ -336,14 +337,183 @@
     if (swing && game.now < swing.until) {
       fx.m = [Number(swing.direction.toFixed(2)), Math.round(swing.range), swing.color];
     }
+    const dash = game._operatorDash;
+    if (dash && game.now < dash.until) {
+      const kind = { gunslinger: 0, hunter: 1, ninja: 2 }[dash.kind];
+      if (kind !== undefined) fx.d = [kind, Number(game.player.dir.toFixed(2))];
+    }
+    if (game._barrier?.active) fx.b = [Math.max(0, Math.round(game._barrier.hp))];
+    if (game._railChargeStartedAt !== null && !game._railNeedsRelease) {
+      fx.r = [Math.min(1, Math.max(0, Number((game.now - game._railChargeStartedAt).toFixed(2))))];
+    }
+    const scythe = game._scytheThrow;
+    if (scythe) fx.s = [Math.round(scythe.pos.x), Math.round(scythe.pos.y), scythe.out ? 1 : 0];
+    if (game._summons?.length) {
+      fx.u = game._summons.slice(0, 3).map((summon) => [Math.round(summon.pos.x), Math.round(summon.pos.y)]);
+    }
+    const grenadeType = { flash: 0, smoke: 1, frag: 2, launcher: 3 };
+    const ownGrenades = (game.grenades || []).filter((grenade) => grenade.owner === game.player && grenadeType[grenade.type] !== undefined);
+    if (ownGrenades.length) {
+      fx.g = ownGrenades.slice(0, 8).map((grenade) => [
+        Math.floor(Number(grenade.id) || 0), grenadeType[grenade.type],
+        Math.round(grenade.pos.x), Math.round(grenade.pos.y),
+      ]);
+    }
+    const ownSmokes = (game.smokes || []).filter((smoke) => smoke.owner === game.player && smoke.endAt > game.now);
+    if (ownSmokes.length) {
+      fx.o = ownSmokes.slice(0, 4).map((smoke) => [
+        Math.floor(Number(smoke.id) || (smoke.pos.x * 100003 + smoke.pos.y)),
+        Math.round(smoke.pos.x), Math.round(smoke.pos.y), Math.round(smoke.radius),
+        smoke.radius >= 200 ? 1 : 0, Number(Math.max(0, smoke.endAt - game.now).toFixed(2)),
+      ]);
+    }
+    const flashSerial = Number.parseFloat(game.canvas.dataset.lastFlashShield || "");
+    if (Number.isFinite(flashSerial)) fx.f = [flashSerial, Number(game.player.dir.toFixed(2))];
+    const railSerial = game.activeOperatorId === "sentinel" ? game.player.shots : 0;
+    if (railSerial > 0) fx.l = [railSerial, Number(game.player.dir.toFixed(2)), 1300];
+    if (game._revealUntil > game.now) fx.v = [Number((game._revealUntil - game.now).toFixed(2))];
     return Object.keys(fx).length ? fx : null;
   }
+
+  const markerMesh = (color, scale = 0.45, opacity = 0.8) => {
+    const marker = game.player.body.clone(false);
+    marker.geometry = game.player.body.geometry.clone();
+    marker.material = game.player.body.material.clone();
+    marker.material.color.setHex(color);
+    marker.material.transparent = true;
+    marker.material.depthWrite = false;
+    marker.material.opacity = opacity;
+    marker.scale.setScalar(scale);
+    game.fxGroup.add(marker);
+    return marker;
+  };
+
+  const disposeMarker = (marker) => {
+    marker?.parent?.remove(marker);
+    marker?.geometry?.dispose?.();
+    marker?.material?.dispose?.();
+  };
+
+  const syncPointMarkers = (entry, key, points, color, scale) => {
+    const markers = entry[key] || [];
+    while (markers.length < points.length) markers.push(markerMesh(color, scale));
+    while (markers.length > points.length) disposeMarker(markers.pop());
+    points.forEach((point, index) => markers[index].position.set(point[0], point[1], 24));
+    entry[key] = markers;
+  };
+
+  const detonateRemoteGrenade = (actor, grenade) => {
+    const type = ["flash", "smoke", "frag", "launcher"][grenade.type];
+    if (!type) return disposeMarker(grenade.mesh);
+    game.explode({ type, pos: actor.pos.clone().set(grenade.x, grenade.y), owner: actor, mesh: grenade.mesh });
+  };
+
+  const syncRemoteGrenades = (actor, entry, rows = []) => {
+    entry.grenades ||= new Map();
+    const activeIds = new Set();
+    for (const [id, type, x, y] of rows) {
+      activeIds.add(id);
+      let grenade = entry.grenades.get(id);
+      if (!grenade) {
+        const colors = [0xffe67d, 0x9bb5ff, 0xff6b67, 0xffa8f0];
+        grenade = { id, type, x, y, mesh: markerMesh(colors[type] || 0xffffff, 0.34, 0.95) };
+        entry.grenades.set(id, grenade);
+      }
+      grenade.x = x;
+      grenade.y = y;
+      grenade.mesh.position.set(x, y, 19);
+      grenade.mesh.rotation.z += 0.24;
+    }
+    for (const [id, grenade] of [...entry.grenades]) {
+      if (activeIds.has(id)) continue;
+      detonateRemoteGrenade(actor, grenade);
+      entry.grenades.delete(id);
+    }
+  };
+
+  const syncRemoteSmokes = (actor, entry, rows = []) => {
+    entry.smokeKeys ||= new Set();
+    for (const [id, x, y, radius, ninja, remaining] of rows) {
+      if (entry.smokeKeys.has(id)) continue;
+      const point = actor.pos.clone().set(x, y);
+      const existing = (game.smokes || []).find((smoke) => smoke.owner === actor && smoke.pos.distanceTo(point) < 24);
+      if (existing) {
+        existing.radius = radius;
+        existing.endAt = game.now + remaining;
+        existing.mesh?.scale?.setScalar(radius / 150);
+        entry.smokeKeys.add(id);
+        continue;
+      }
+      const mesh = markerMesh(0x9bb5ff, 0.3, 0.35);
+      mesh.position.set(x, y, 18);
+      const before = game.smokes.length;
+      game.explode({ type: "smoke", pos: point, owner: actor, ninjaSmoke: Boolean(ninja), mesh });
+      const smoke = game.smokes.length > before ? game.smokes[game.smokes.length - 1] : null;
+      if (smoke) {
+        smoke.radius = radius;
+        smoke.endAt = game.now + remaining;
+        smoke.mesh?.scale?.setScalar(radius / 150);
+      }
+      entry.smokeKeys.add(id);
+    }
+  };
+
+  const syncBarrier = (actor, entry, barrier) => {
+    const strips = entry.barrier || [];
+    if (!barrier || !actor.alive) {
+      strips.forEach(disposeStrip);
+      entry.barrier = [];
+      return;
+    }
+    while (strips.length < 6) strips.push(stripMesh(barrier[0] < 88 ? 0xff8a7a : 0x9bd0ff, 0.7));
+    const half = Math.PI / 6;
+    strips.forEach((strip, index) => {
+      const a = actor.dir - half + index / strips.length * half * 2;
+      const b = actor.dir - half + (index + 1) / strips.length * half * 2;
+      placeStrip(strip,
+        { x: actor.pos.x + Math.cos(a) * 82, y: actor.pos.y + Math.sin(a) * 82 },
+        { x: actor.pos.x + Math.cos(b) * 100, y: actor.pos.y + Math.sin(b) * 100 }, 5);
+    });
+    entry.barrier = strips;
+  };
+
+  const showRemoteBurst = (actor, direction, color, range, halfAngle = 0) => {
+    const count = halfAngle ? 7 : 2;
+    for (let index = 0; index < count; index++) {
+      const angle = direction + (halfAngle ? -halfAngle + index / (count - 1) * halfAngle * 2 : 0);
+      const strip = stripMesh(index % 2 ? color : 0xffffff, 0.85);
+      placeStrip(strip, actor.pos, {
+        x: actor.pos.x + Math.cos(angle) * range,
+        y: actor.pos.y + Math.sin(angle) * range,
+      }, halfAngle ? 5 : index ? 13 : 4);
+      window.setTimeout(() => disposeStrip(strip), halfAngle ? 340 : 220);
+    }
+  };
+
+  const applyFlashShield = (actor, entry, flash) => {
+    if (!flash || entry.flashSerial === flash[0]) return;
+    entry.flashSerial = flash[0];
+    const direction = flash[1];
+    showRemoteBurst(actor, direction, 0xffe67d, 260, Math.PI / 3);
+    if (actor.team !== "enemy" || !game.player.alive) return;
+    const dx = game.player.pos.x - actor.pos.x;
+    const dy = game.player.pos.y - actor.pos.y;
+    const delta = Math.atan2(Math.sin(Math.atan2(dy, dx) - direction), Math.cos(Math.atan2(dy, dx) - direction));
+    if (Math.hypot(dx, dy) <= 260 && Math.abs(delta) <= Math.PI / 3) {
+      game.player.flashedUntil = Math.max(game.player.flashedUntil, game.now + 1);
+    }
+  };
 
   function clearRemoteFx(playerId = null) {
     for (const [id, entry] of remoteFx) {
       if (playerId && id !== playerId) continue;
       if (entry.tongue) disposeStrip(entry.tongue);
       if (entry.melee) disposeStrip(entry.melee);
+      for (const strip of entry.barrier || []) disposeStrip(strip);
+      for (const marker of [entry.dash, entry.railCharge, entry.scythe, entry.reveal, ...(entry.summons || [])]) {
+        disposeMarker(marker);
+      }
+      for (const grenade of entry.grenades?.values?.() || []) disposeMarker(grenade.mesh);
       remoteFx.delete(id);
     }
   }
@@ -355,7 +525,7 @@
 
     // 개구리 혀 — 사람과 혀끝을 잇는 선
     if (fx?.t && actor.alive) {
-      entry.tongue = entry.tongue || stripMesh(0x9ef07a, 0.95);
+      entry.tongue = entry.tongue || stripMesh(0xff739f, 0.95);
       placeStrip(entry.tongue, actor.pos, { x: fx.t[0], y: fx.t[1] }, 8);
     } else if (entry.tongue) {
       disposeStrip(entry.tongue);
@@ -374,6 +544,57 @@
       entry.melee = null;
     }
 
+    if (fx?.d && actor.alive) {
+      const colors = [0xffd166, 0x9ef0ff, 0x9bb5ff];
+      if (!entry.dash || entry.dashKind !== fx.d[0]) {
+        disposeMarker(entry.dash);
+        entry.dash = markerMesh(colors[fx.d[0]] || 0xffffff, 1.45, 0.24);
+        entry.dashKind = fx.d[0];
+      }
+      entry.dash.position.set(actor.pos.x, actor.pos.y, 12);
+    } else if (entry.dash) {
+      disposeMarker(entry.dash);
+      entry.dash = null;
+    }
+
+    syncBarrier(actor, entry, fx?.b);
+
+    if (fx?.r && actor.alive) {
+      entry.railCharge ||= markerMesh(0x55f0b0, 1.2 + fx.r[0], 0.28 + fx.r[0] * 0.35);
+      entry.railCharge.position.set(actor.pos.x, actor.pos.y, 14);
+      entry.railCharge.scale.setScalar(1.2 + fx.r[0]);
+    } else if (entry.railCharge) {
+      disposeMarker(entry.railCharge);
+      entry.railCharge = null;
+    }
+
+    if (fx?.l && entry.railSerial !== fx.l[0]) {
+      entry.railSerial = fx.l[0];
+      showRemoteBurst(actor, fx.l[1], 0x55f0b0, fx.l[2]);
+    }
+
+    if (fx?.s) {
+      entry.scythe ||= markerMesh(0xc59bff, 0.72, 0.9);
+      entry.scythe.position.set(fx.s[0], fx.s[1], 22);
+      entry.scythe.rotation.z += fx.s[2] ? 0.32 : -0.32;
+    } else if (entry.scythe) {
+      disposeMarker(entry.scythe);
+      entry.scythe = null;
+    }
+
+    syncPointMarkers(entry, "summons", fx?.u || [], 0xc7d0d5, 0.72);
+    syncRemoteGrenades(actor, entry, fx?.g || []);
+    syncRemoteSmokes(actor, entry, fx?.o || []);
+    applyFlashShield(actor, entry, fx?.f);
+
+    if (fx?.v) {
+      entry.reveal ||= markerMesh(0xff3b45, 1.65, 0.22);
+      entry.reveal.position.set(actor.pos.x, actor.pos.y, 11);
+    } else if (entry.reveal) {
+      disposeMarker(entry.reveal);
+      entry.reveal = null;
+    }
+
     remoteFx.set(playerId, entry);
   }
 
@@ -386,7 +607,11 @@
     const origin = actor.pos.clone().set(message.x, message.y);
     const direction = actor.pos.clone().set(Math.cos(message.dir), Math.sin(message.dir));
     actor.dir = message.dir;
-    game.spawnProjectile(actor, origin, direction, actor.weapon);
+    const specialWeapons = {
+      dagger: { ...actor.weapon, id: "dagger", damage: 15, pellets: 1, range: 720, projectileSpeed: 1050, color: 0xdffcff },
+      "frog-auto-bubble": { ...actor.weapon, id: "frog-auto-bubble", damage: 2, pellets: 1, range: 334, projectileSpeed: 920, color: 0x83ffad },
+    };
+    game.spawnProjectile(actor, origin, direction, specialWeapons[message.weaponId] || actor.weapon);
   }
 
   function onMessage(message) {
@@ -398,6 +623,12 @@
     if (message.type === "state") {
       applyMemberState(message.player);
       applyRemoteFx(message.player.id, message.fx);
+    }
+    if (message.type === "barrier" && message.playerId === playerId && game?._barrier) {
+      game._barrier.hp = Math.min(game._barrier.hp, message.hp + message.damage);
+      game.absorbBarrierDamage?.(message.damage);
+      game._barrier.hp = message.hp;
+      game.renderUi();
     }
     if (message.type === "hit") {
       const actor = actors.get(message.targetId);

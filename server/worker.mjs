@@ -6,6 +6,10 @@ const ALLOWED_CHARACTERS = new Set([
   "reaper", "hunter", "ninja", "sniper", "demolitionist",
 ]);
 const ALLOWED_MAPS = new Set(["crossroads", "offset", "open-lanes"]);
+const ALLOWED_PROJECTILES = new Set([
+  "dual_pistols", "shield_pistol", "rifle", "frog", "frog-auto-bubble",
+  "shotgun", "dagger", "bolt_action",
+]);
 const DAMAGE_LIMITS = {
   gunslinger: 34, bulwark: 45, sentinel: 38, soldier: 35, frog: 18,
   reaper: 48, hunter: 55, ninja: 65, sniper: 100, demolitionist: 85,
@@ -49,13 +53,39 @@ const numbers = (value, count) =>
     ? value.map((n) => Math.round(n * 100) / 100)
     : null;
 
+const numberRows = (value, count, limit) => {
+  if (!Array.isArray(value)) return null;
+  const rows = value.slice(0, limit).map((row) => numbers(row, count)).filter(Boolean);
+  return rows.length ? rows : null;
+};
+
 const cleanFx = (fx) => {
   if (!fx || typeof fx !== "object") return null;
   const cleaned = {};
   const tongue = numbers(fx.t, 2);
   const melee = numbers(fx.m, 3);
+  const dash = numbers(fx.d, 2);
+  const barrier = numbers(fx.b, 1);
+  const railCharge = numbers(fx.r, 1);
+  const scythe = numbers(fx.s, 3);
+  const summons = numberRows(fx.u, 2, 3);
+  const grenades = numberRows(fx.g, 4, 8);
+  const smokes = numberRows(fx.o, 6, 4);
+  const flashShield = numbers(fx.f, 2);
+  const railBeam = numbers(fx.l, 3);
+  const reveal = numbers(fx.v, 1);
   if (tongue) cleaned.t = tongue;
   if (melee) cleaned.m = melee;
+  if (dash) cleaned.d = dash;
+  if (barrier) cleaned.b = barrier;
+  if (railCharge) cleaned.r = railCharge;
+  if (scythe) cleaned.s = scythe;
+  if (summons) cleaned.u = summons;
+  if (grenades) cleaned.g = grenades;
+  if (smokes) cleaned.o = smokes;
+  if (flashShield) cleaned.f = flashShield;
+  if (railBeam) cleaned.l = railBeam;
+  if (reveal) cleaned.v = reveal;
   return Object.keys(cleaned).length ? cleaned : null;
 };
 
@@ -396,8 +426,20 @@ export class GameRoom extends DurableObject {
     // 명중률을 내려면 발사 수가 필요한데 서버는 총알을 모른다. 클라이언트가 세어 보낸다.
     const shots = Number(data.shots);
     if (Number.isFinite(shots) && shots > (member.shots || 0)) member.shots = Math.min(9999, Math.floor(shots));
+    const fx = cleanFx(data.fx);
+    member.skillFx = fx;
+    member.skillFxAt = now;
+    if (member.characterId === "bulwark") {
+      if (fx?.b) {
+        if (!member.barrierActive) member.barrierHp = 250;
+        member.barrierActive = true;
+        member.barrierHp = Math.min(member.barrierHp ?? 250, fx.b[0]);
+      } else {
+        member.barrierActive = false;
+      }
+    }
     await this.ctx.storage.put("room", room);
-    this.broadcast(room, { type: "state", player: publicMember(member), fx: cleanFx(data.fx) }, ws);
+    this.broadcast(room, { type: "state", player: publicMember(member), fx }, ws);
   }
 
   /* 발사 중계. 총알은 각 화면이 스스로 만들기 때문에, 쏜 사실을 알려주지 않으면
@@ -407,6 +449,7 @@ export class GameRoom extends DurableObject {
     if (!member || room.status !== "playing" || !member.alive) return;
     const x = Number(data.x); const y = Number(data.y); const dir = Number(data.dir);
     if (![x, y, dir].every(Number.isFinite)) return;
+    const weaponId = ALLOWED_PROJECTILES.has(data.weaponId) ? data.weaponId : null;
     // 샷건은 한 번에 여러 발이라 여유를 두되, 무한 스팸은 막는다.
     const now = Date.now();
     member.shotBurst = now - (member.lastShotAt || 0) < 120 ? (member.shotBurst || 0) + 1 : 0;
@@ -416,6 +459,7 @@ export class GameRoom extends DurableObject {
       type: "shot",
       playerId: member.id,
       characterId: member.characterId,
+      weaponId,
       x, y, dir,
     }, ws);
   }
@@ -449,6 +493,19 @@ export class GameRoom extends DurableObject {
     attacker.lastHitAt = now;
     const maxDamage = DAMAGE_LIMITS[attacker.characterId] || 40;
     const damage = Math.max(1, Math.min(maxDamage, Number(data.damage) || 1));
+    const recentSkillState = now - (target.skillFxAt || 0) < 250;
+    if (target.characterId === "hunter" && recentSkillState && target.skillFx?.d?.[0] === 1) return;
+    if (target.characterId === "bulwark" && recentSkillState && target.barrierActive && target.barrierHp > 0) {
+      const attackAngle = Math.atan2(attacker.y - target.y, attacker.x - target.x);
+      const delta = Math.atan2(Math.sin(attackAngle - target.dir), Math.cos(attackAngle - target.dir));
+      if (Math.abs(delta) <= Math.PI / 6) {
+        target.barrierHp = Math.max(0, target.barrierHp - damage);
+        if (target.barrierHp <= 0) target.barrierActive = false;
+        await this.ctx.storage.put("room", room);
+        this.broadcast(room, { type: "barrier", playerId: target.id, hp: target.barrierHp, damage });
+        return;
+      }
+    }
     const dealt = Math.min(damage, target.hp);
     target.hp = Math.max(0, target.hp - damage);
     target.alive = target.hp > 0;
