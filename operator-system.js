@@ -1102,6 +1102,7 @@
 
     game.canvas.addEventListener("pointerdown", (event) => {
       if (event.button !== 2 || game.phase !== "playing") return;
+      if (isOperator("frog")) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       game.mouse.x = event.clientX;

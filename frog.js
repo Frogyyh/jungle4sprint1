@@ -9,7 +9,7 @@
     const FROG = {
       id: "frog",
       name: "FROG BUBBLE SPRAYER",
-      damage: 3,
+      damage: 4,
       pellets: 5,
       rpm: 300,
       spreadDeg: 12,
@@ -22,12 +22,79 @@
     };
     const vec = (x = 0, y = 0) => new game.player.pos.constructor(x, y);
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const SPECIAL_COOLDOWN = 5;
+    const ATTACHED_VISION_RADIUS = 280;
+    const TONGUE_PULL_SPEED = 260;
+    const MIN_TONGUE_LENGTH = 48;
+    const AUTO_BUBBLE_INTERVAL = 0.32;
+    const AUTO_BUBBLE = {
+      id: "frog-auto-bubble",
+      name: "SWING BUBBLE",
+      damage: 2,
+      pellets: 1,
+      rpm: 1,
+      spreadDeg: 0,
+      magSize: 1,
+      reserve: 1,
+      reload: 1,
+      range: ATTACHED_VISION_RADIUS + 30,
+      projectileSpeed: 920,
+      color: 0x83ffad,
+    };
     const isFrog = () => game.activeOperatorId === "frog" || game.player.weapon?.id === "frog";
     let tongue = null;
-    let tongueReadyAt = 0;
     let canLaunchTongue = true;
     let spaceHeld = false;
+    let rightMouseHeld = false;
+    let visionRing = null;
+    let nextAutoBubbleAt = 0;
+    let autoBubbleCount = 0;
+
+    const disposeVisionRing = () => {
+      if (!visionRing) return;
+      game.fxGroup.remove(visionRing);
+      visionRing.traverse((part) => {
+        if (part.geometry?.dispose) part.geometry.dispose();
+        if (part.material?.dispose) part.material.dispose();
+      });
+      visionRing = null;
+    };
+
+    const ensureVisionRing = () => {
+      if (visionRing?.parent === game.fxGroup) return;
+      disposeVisionRing();
+      visionRing = new game.fxGroup.constructor();
+      const dotCount = 52;
+      for (let index = 0; index < dotCount; index += 1) {
+        const angle = Math.PI * 2 * index / dotCount;
+        const dot = game.player.body.clone();
+        dot.geometry = game.player.body.geometry.clone();
+        dot.material = game.player.body.material.clone();
+        dot.material.color.setHex(0x55ef82);
+        dot.material.transparent = true;
+        dot.material.opacity = 0.72;
+        dot.material.depthWrite = false;
+        dot.scale.setScalar(0.14);
+        dot.position.set(
+          Math.cos(angle) * ATTACHED_VISION_RADIUS,
+          Math.sin(angle) * ATTACHED_VISION_RADIUS,
+          25,
+        );
+        visionRing.add(dot);
+      }
+      visionRing.visible = false;
+      game.fxGroup.add(visionRing);
+    };
+
+    const updateVisionRing = (dt) => {
+      ensureVisionRing();
+      const attached = isFrog() && tongue?.phase === "attached";
+      visionRing.visible = attached;
+      if (!attached) return;
+      visionRing.position.set(game.player.pos.x, game.player.pos.y, 0);
+      visionRing.rotation.z += dt * 0.14;
+      const pulse = 1 + Math.sin(game.now * 4.5) * 0.012;
+      visionRing.scale.set(pulse, pulse, 1);
+    };
 
     const rayWall = (origin, direction, maxDistance, wall) => {
       const minX = wall.x - wall.w / 2;
@@ -63,6 +130,7 @@
         if (part.material && part.material.dispose) part.material.dispose();
       });
       tongue = null;
+      if (visionRing) visionRing.visible = false;
       game.canvas.dataset.tongueState = "idle";
       game.canvas.dataset.tongueLength = "0";
     };
@@ -84,10 +152,6 @@
 
     const beginTongue = () => {
       if (!isFrog() || !canLaunchTongue || tongue || !game.player.alive) return;
-      if (game.now < tongueReadyAt) {
-        game.showToast(`TONGUE ${(tongueReadyAt - game.now).toFixed(1)}s`);
-        return;
-      }
       canLaunchTongue = false;
       const direction = game.mouse.world.clone().sub(game.player.pos);
       if (direction.lengthSq() < 1) {
@@ -132,13 +196,17 @@
       if (!tongue || tongue.phase === "retracting") return;
       tongue.phase = "retracting";
       tongue.anchor = null;
-      tongueReadyAt = game.now + SPECIAL_COOLDOWN;
+      rightMouseHeld = false;
+      game.visibilityDirty = true;
     };
 
     const swing = (dt) => {
       const radial = game.player.pos.clone().sub(tongue.anchor);
       if (radial.lengthSq() < 1) return;
-      radial.setLength(tongue.length);
+      const targetLength = rightMouseHeld
+        ? Math.max(MIN_TONGUE_LENGTH, tongue.length - TONGUE_PULL_SPEED * dt)
+        : tongue.length;
+      radial.setLength(targetLength);
       const drive = (game.keys.has("KeyD") ? 1 : 0) - (game.keys.has("KeyA") ? 1 : 0);
       tongue.angularVelocity += drive * 11 * dt;
       tongue.angularVelocity *= Math.pow(drive === 0 ? 0.22 : 0.82, dt);
@@ -155,9 +223,38 @@
         tongue.angularVelocity *= -0.2;
       } else {
         game.player.pos.copy(candidate);
+        tongue.length = targetLength;
         game.visibilityDirty = true;
       }
       tongue.tipPos.copy(tongue.anchor);
+    };
+
+    const fireSwingBubble = () => {
+      if (Math.abs(tongue.angularVelocity) < 0.3 || game.now < nextAutoBubbleAt) return;
+      const target = game.bots
+        .filter((bot) => (
+          bot.alive
+          && bot.pos.distanceTo(game.player.pos) <= ATTACHED_VISION_RADIUS
+          && !game.smokeBlocks(game.player.pos, bot.pos)
+          && !game.rayBlocked(game.player.pos, bot.pos)
+        ))
+        .sort((a, b) => a.pos.distanceToSquared(game.player.pos) - b.pos.distanceToSquared(game.player.pos))[0];
+      if (!target) return;
+
+      const direction = target.pos.clone().sub(game.player.pos).normalize();
+      const position = game.player.pos.clone().add(
+        direction.clone().multiplyScalar(game.player.radius + 9),
+      );
+      game.spawnProjectile(game.player, position, direction, AUTO_BUBBLE);
+      const projectile = game.projectiles[game.projectiles.length - 1];
+      if (projectile) {
+        projectile.isAutoBubble = true;
+        projectile.mesh.scale.multiplyScalar(0.72);
+        projectile.mesh.material.color.setHex(0x83ffad);
+      }
+      game.player.shots++;
+      nextAutoBubbleAt = game.now + AUTO_BUBBLE_INTERVAL;
+      autoBubbleCount++;
     };
 
     const updateTongue = (dt) => {
@@ -185,12 +282,14 @@
           tongue.phase = "attached";
           tongue.anchor = tongue.tipPos.clone();
           tongue.angularVelocity = 0;
-          game.showToast("WALL GRABBED — A LEFT / D RIGHT");
+          game.visibilityDirty = true;
+          game.showToast("WALL GRABBED — A/D SWING · RMB PULL");
         } else if (tongue.length >= tongue.maxLength) {
           releaseTongue();
         }
       } else if (tongue.phase === "attached") {
         swing(dt);
+        fireSwingBubble();
       } else if (tongue.phase === "retracting") {
         const toPlayer = game.player.pos.clone().sub(tongue.tipPos);
         const distance = toPlayer.length();
@@ -201,6 +300,7 @@
         }
         tongue.tipPos.add(toPlayer.multiplyScalar(travel / distance));
       }
+      updateVisionRing(dt);
       renderTongue();
     };
 
@@ -215,9 +315,12 @@
       const wantsFrog = this.selectedWeapon === "frog";
       if (wantsFrog) this.selectedWeapon = "rifle";
       disposeTongue();
-      tongueReadyAt = 0;
+      disposeVisionRing();
       canLaunchTongue = true;
       spaceHeld = false;
+      rightMouseHeld = false;
+      nextAutoBubbleAt = 0;
+      autoBubbleCount = 0;
       originalStartRound();
       if (wantsFrog) {
         this.selectedWeapon = "frog";
@@ -285,6 +388,58 @@
       if (isFrog()) updateTongue(dt);
     };
 
+    const originalIsVisible = game.isVisible.bind(game);
+    game.isVisible = function isVisibleWithAttachedFrog(observer, target, fov, range) {
+      if (
+        isFrog()
+        && tongue?.phase === "attached"
+        && observer === this.player
+        && target.alive
+        && target.pos.distanceTo(this.player.pos) <= ATTACHED_VISION_RADIUS
+        && !this.smokeBlocks(this.player.pos, target.pos)
+        && !this.rayBlocked(this.player.pos, target.pos)
+      ) {
+        return true;
+      }
+      return originalIsVisible(observer, target, fov, range);
+    };
+
+    const originalUpdateVisibility = game.updateVisibility.bind(game);
+    game.updateVisibility = function updateAttachedFrogVisibility() {
+      originalUpdateVisibility();
+      if (!isFrog() || tongue?.phase !== "attached" || !this.visibilityMesh?.geometry) return;
+      if (this.visibilityMesh.geometry.userData?.frogAttachedVision) return;
+
+      const oldGeometry = this.visibilityMesh.geometry;
+      const oldPositions = oldGeometry.getAttribute("position");
+      if (!oldPositions) return;
+
+      const positions = Array.from(oldPositions.array);
+      const segments = 64;
+      const points = [];
+      for (let index = 0; index <= segments; index += 1) {
+        const angle = Math.PI * 2 * index / segments;
+        points.push(this.traceVision(
+          this.player.pos,
+          vec(Math.cos(angle), Math.sin(angle)),
+          ATTACHED_VISION_RADIUS,
+        ));
+      }
+      for (let index = 0; index < segments; index += 1) {
+        positions.push(
+          this.player.pos.x, this.player.pos.y, 12,
+          points[index].x, points[index].y, 12,
+          points[index + 1].x, points[index + 1].y, 12,
+        );
+      }
+
+      const geometry = new oldGeometry.constructor();
+      geometry.setAttribute("position", new oldPositions.constructor(positions, 3));
+      geometry.userData.frogAttachedVision = true;
+      this.visibilityMesh.geometry = geometry;
+      oldGeometry.dispose();
+    };
+
     const originalDamageActor = game.damageActor.bind(game);
     game.damageActor = function damageWithWaterSlow(source, target, amount) {
       const hpBefore = target.hp;
@@ -316,16 +471,19 @@
       applyAppearance(true);
       document.querySelector("#weapon-name").textContent = "FROG BUBBLE SPRAYER";
       document.querySelector("#reload-hint").textContent = tongue && tongue.phase === "attached"
-        ? "A: LEFT SWING · D: RIGHT SWING · RELEASE SPACE"
+        ? "A/D: SWING · RMB: PULL · RELEASE SPACE"
         : "LMB: WATER GUN · SPACE: WALL TONGUE";
       this.canvas.dataset.botSlows = this.bots
         .map((bot) => Math.max(0, bot.slowUntil - this.now).toFixed(2))
         .join(",");
       this.canvas.dataset.soapBubbles = `${this.projectiles.filter((projectile) => projectile.isSoapBubble).length}`;
-      this.canvas.dataset.tongueCooldown = Math.max(0, tongueReadyAt - this.now).toFixed(2);
+      this.canvas.dataset.tongueCooldown = "0.00";
+      this.canvas.dataset.tonguePulling = rightMouseHeld ? "true" : "false";
+      this.canvas.dataset.frogVisionRing = tongue?.phase === "attached" ? "visible" : "hidden";
+      this.canvas.dataset.autoBubbles = `${autoBubbleCount}`;
     };
 
-    game.getTongueCooldown = () => Math.max(0, tongueReadyAt - game.now);
+    game.getTongueCooldown = () => 0;
 
     window.addEventListener("keydown", (event) => {
       if (event.code !== "Space" || event.repeat || game.phase !== "playing" || !isFrog()) return;
@@ -340,13 +498,25 @@
       canLaunchTongue = true;
       releaseTongue();
     });
+    game.canvas.addEventListener("pointerdown", (event) => {
+      if (event.button !== 2 || game.phase !== "playing" || !isFrog()) return;
+      if (!tongue || tongue.phase !== "attached") return;
+      event.preventDefault();
+      rightMouseHeld = true;
+    });
+    window.addEventListener("pointerup", (event) => {
+      if (event.button === 2) rightMouseHeld = false;
+    });
     window.addEventListener("blur", () => {
       spaceHeld = false;
       canLaunchTongue = true;
+      rightMouseHeld = false;
       releaseTongue();
     });
     game.canvas.dataset.frogInstalled = "true";
     game.canvas.dataset.tongueState = "idle";
+    game.canvas.dataset.frogVisionRing = "hidden";
+    game.canvas.dataset.autoBubbles = "0";
   };
 
   installFrog();
