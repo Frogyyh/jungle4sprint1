@@ -73,7 +73,8 @@
         <p id="result-copy"></p>
         <!-- 팀별 전적. 내용은 lobby-bridge.js 가 채운다. -->
         <div id="scoreboard" class="scoreboard"></div>
-        <div class="result-stats"><div><b id="result-kills">0</b><span>HOSTILES</span></div><div><b id="result-accuracy">0%</b><span>ACCURACY</span></div><div><b id="result-time">00:00</b><span>TIME</span></div></div>
+        <!-- 개인 요약. 전적표와 겹쳐서 숨겨두지만, 코어가 값을 채우므로 요소는 남긴다. -->
+        <div class="result-stats hidden"><div><b id="result-kills">0</b><span>HOSTILES</span></div><div><b id="result-accuracy">0%</b><span>ACCURACY</span></div><div><b id="result-time">00:00</b><span>TIME</span></div></div>
         <div class="result-actions">
           <button id="room-return-button" class="ghost-button" type="button">방으로</button>
           <button id="lobby-return-button" class="ghost-button" type="button">로비로</button>

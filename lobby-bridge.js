@@ -190,13 +190,6 @@
         buildTeam(foeRows, foeLabel, won === null ? null : !won)
       );
 
-      // 가운데 큰 숫자 세 개는 코어가 자기 통계로 채운다. 온라인에서는
-      // 피격 판정이 서버에 있어 0 으로 남으므로 내 기록으로 덮는다.
-      const me = data.rows.find((row) => row.mine);
-      if (multiplayer && me) {
-        $("#result-kills").textContent = `${me.kills}`;
-        $("#result-accuracy").textContent = `${me.accuracy}%`;
-      }
     };
 
     /* ---------------- 아군 관전 ----------------

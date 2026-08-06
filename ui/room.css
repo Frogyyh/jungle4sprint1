@@ -298,6 +298,16 @@ body {
   border-color: var(--red);
 }
 
+/* 방장이 눌러서 직업을 바꿀 수 있는 봇 자리 */
+.slot.slot-clickable {
+  cursor: pointer;
+}
+
+.slot.slot-clickable:hover {
+  border-color: var(--cyan);
+  background: #6de6df12;
+}
+
 /* READY 표시 위에 1초 머무는 동안 차오르는 눈금.
    다 차면 그 자리에 내보내기 버튼이 뜬다. */
 .slot-ready.holding::after {

@@ -15,6 +15,7 @@ let room = null;
 let socket = null;
 let picked = null;
 let kickTarget = null;
+let charTarget = null; // 직업을 고르는 대상 — null 이면 나, 아니면 그 봇
 const mine = () => room?.members.find((member) => member.id === session.playerId);
 const isHost = () => room?.hostId === session.playerId;
 const perTeam = () => (room?.capacity || 2) / 2;
@@ -68,11 +69,47 @@ function renderSlots() {
       ready.className = member.id === room.hostId || member.ready ? "slot-ready on" : "slot-ready off";
       ready.textContent = member.id === room.hostId ? "HOST" : member.ready ? "READY" : "WAIT";
       slot.append(portrait, info, ready);
+
+      // 방장은 봇 자리를 눌러 직업을 바꾼다.
+      if (isHost() && member.bot) {
+        slot.classList.add("slot-clickable");
+        slot.title = "눌러서 직업 변경";
+        slot.addEventListener("click", (event) => {
+          if (event.target.closest(".slot-kick")) return; // 내보내기 버튼은 예외
+          openCharacterPicker(member);
+        });
+      }
+
+      /* 내보내기는 READY 표시 위에 1초 머물러야 나타난다.
+         지나가다 스치는 것으로 뜨면 실수로 누르기 쉽다. */
       if (isHost() && member.id !== room.hostId) {
         const kick = document.createElement("button");
-        kick.type = "button"; kick.className = "slot-kick"; kick.textContent = "내보내기";
-        kick.addEventListener("click", () => openKick(member));
+        kick.type = "button"; kick.className = "slot-kick hidden"; kick.textContent = "내보내기";
+        kick.addEventListener("click", (event) => { event.stopPropagation(); openKick(member); });
         slot.appendChild(kick);
+        slot.title = slot.title || "READY 표시에 1초 동안 마우스를 올려두면 내보내기가 나타납니다";
+
+        let holdTimer = null;
+        const resetHold = () => {
+          clearTimeout(holdTimer);
+          holdTimer = null;
+          ready.classList.remove("holding", "hidden");
+          kick.classList.add("hidden");
+        };
+        ready.addEventListener("mouseenter", () => {
+          if (holdTimer) return;
+          ready.classList.add("holding");
+          holdTimer = setTimeout(() => {
+            holdTimer = null; // 다 찼다 — 아래 mouseleave 가 되돌리지 않게 비운다
+            ready.classList.remove("holding");
+            ready.classList.add("hidden");
+            kick.classList.remove("hidden");
+          }, 1000);
+        });
+        // 1초를 채우기 전에 벗어나면 처음부터 다시.
+        ready.addEventListener("mouseleave", () => { if (holdTimer) resetHold(); });
+        // 자리 밖으로 나가면 원래대로. 버튼으로 옮겨 가는 동안은 유지된다.
+        slot.addEventListener("mouseleave", resetHold);
       }
       box.appendChild(slot);
     }
@@ -172,9 +209,28 @@ charRow.addEventListener("click", (event) => {
   charRow.classList.add("hidden"); el("char-detail").classList.remove("hidden"); el("char-back").classList.remove("hidden"); el("char-confirm").disabled = false;
 });
 el("char-back").addEventListener("click", showCharacterList);
-el("open-char").addEventListener("click", () => { picked = mine()?.characterId || null; el("char-confirm").disabled = !picked; showCharacterList(); charModal.classList.remove("hidden"); });
+
+/* 직업 선택 창은 두 가지로 쓰인다 — 내 직업(charTarget = null)과
+   방장이 고르는 봇의 직업(charTarget = 그 봇). */
+function openCharacterPicker(member = null) {
+  charTarget = member;
+  picked = (member || mine())?.characterId || null;
+  el("char-confirm").disabled = !picked;
+  el("char-modal-who").textContent = member ? `${member.name} 의 직업` : "캐릭터 선택";
+  showCharacterList();
+  charModal.classList.remove("hidden");
+}
+
+el("open-char").addEventListener("click", () => openCharacterPicker());
 el("char-cancel").addEventListener("click", () => charModal.classList.add("hidden"));
-el("char-confirm").addEventListener("click", () => { if (picked) sendAction(socket, "character", picked); charModal.classList.add("hidden"); });
+el("char-confirm").addEventListener("click", () => {
+  if (picked) {
+    if (charTarget) sendAction(socket, "botcharacter", { id: charTarget.id, characterId: picked });
+    else sendAction(socket, "character", picked);
+  }
+  charTarget = null;
+  charModal.classList.add("hidden");
+});
 
 const mapModal = el("map-modal");
 el("open-map").addEventListener("click", () => {
