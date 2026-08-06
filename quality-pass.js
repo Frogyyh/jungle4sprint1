@@ -58,73 +58,85 @@
     game.canvas.dataset.cameraZoomMode = "fixed";
     game.canvas.dataset.identificationBounds = "camera-frustum";
 
-    const layouts = [
-      {
-        name: "CROSSROADS",
-        points: {
-          "center-nw": [-125, 125], "center-ne": [125, 125],
-          "center-sw": [-125, -125], "center-se": [125, -125],
-          "north-center-cover": [0, 500], "south-center-cover": [0, -500],
-          "north-west-long": [-500, 380], "north-west-short": [-315, 290],
-          "north-east-long": [500, 380], "north-east-short": [315, 290],
-          "south-west-long": [-500, -380], "south-west-short": [-315, -290],
-          "south-east-long": [500, -380], "south-east-short": [315, -290],
-          "west-mid-upper": [-675, 135], "west-mid-lower": [-675, -135],
-          "east-mid-upper": [675, 135], "east-mid-lower": [675, -135],
-          "corner-nw": [-775, 525], "corner-ne": [775, 525],
-          "corner-sw": [-775, -525], "corner-se": [775, -525]
-        }
-      },
-      {
-        name: "OFFSET",
-        points: {
-          "center-nw": [-145, 135], "center-ne": [145, 105],
-          "center-sw": [-145, -105], "center-se": [145, -135],
-          "north-center-cover": [80, 515], "south-center-cover": [-80, -515],
-          "north-west-long": [-535, 345], "north-west-short": [-325, 435],
-          "north-east-long": [535, 405], "north-east-short": [325, 285],
-          "south-west-long": [-535, -405], "south-west-short": [-325, -285],
-          "south-east-long": [535, -345], "south-east-short": [325, -435],
-          "west-mid-upper": [-700, 160], "west-mid-lower": [-620, -145],
-          "east-mid-upper": [620, 145], "east-mid-lower": [700, -160],
-          "corner-nw": [-650, 550], "corner-ne": [805, 500],
-          "corner-sw": [-805, -500], "corner-se": [650, -550]
-        }
-      },
-      {
-        name: "OPEN LANES",
-        points: {
-          "center-nw": [-165, 145], "center-ne": [165, 145],
-          "center-sw": [-165, -145], "center-se": [165, -145],
-          "north-center-cover": [0, 535], "south-center-cover": [0, -535],
-          "north-west-long": [-445, 425], "north-west-short": [-305, 230],
-          "north-east-long": [445, 425], "north-east-short": [305, 230],
-          "south-west-long": [-445, -425], "south-west-short": [-305, -230],
-          "south-east-long": [445, -425], "south-east-short": [305, -230],
-          "west-mid-upper": [-735, 155], "west-mid-lower": [-735, -155],
-          "east-mid-upper": [735, 155], "east-mid-lower": [735, -155],
-          "corner-nw": [-760, 470], "corner-ne": [760, 470],
-          "corner-sw": [-760, -470], "corner-se": [760, -470]
-        }
-      }
-    ];
+    const mapData = window.BREACHLINE_MAP_DATA;
+    const THREE = window.BREACHLINE_THREE;
+    const requestedMapId = new URLSearchParams(location.search).get("map") || "crossroads";
+    const selectedMap = mapData.find(requestedMapId);
+    const blockingTypes = new Set(["boundary", "wall", "cover", "crate", "water"]);
 
-    const applyLayout = (index) => {
-      const layout = layouts[index % layouts.length];
-      for (const [id, point] of Object.entries(layout.points)) {
-        const wall = game.walls.find((item) => item.id === id);
-        if (!wall) continue;
-        wall.x = point[0];
-        wall.y = point[1];
-        if (wall.mesh) {
-          wall.mesh.position.x = wall.x;
-          wall.mesh.position.y = wall.y;
+    const disposeMapMesh = (mesh) => {
+      if (!mesh) return;
+      game.worldGroup.remove(mesh);
+      mesh.geometry?.dispose();
+      mesh.material?.dispose();
+    };
+
+    const makeMapMesh = (object) => {
+      const color = selectedMap.theme[object.type] || selectedMap.theme.wall;
+      const height = object.type === "boundary" ? 20 : object.type === "water" ? 2 : object.type === "bush" ? 5 : 24;
+      const geometry = object.r
+        ? new THREE.CylinderGeometry(object.r, object.r, 8, 12)
+        : new THREE.BoxGeometry(object.w, object.h, height);
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: object.type === "bush" || object.type === "water",
+        opacity: object.type === "bush" ? 0.72 : object.type === "water" ? 0.78 : 1,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      if (object.r) mesh.rotation.x = Math.PI / 2;
+      mesh.position.set(object.x, object.y, object.type === "water" ? 0 : height / 2 - 7);
+      mesh.userData.breachlineMapObject = object.type;
+      return mesh;
+    };
+
+    const applyLayout = () => {
+      for (const wall of game.walls) disposeMapMesh(wall.mesh);
+      for (const mesh of game._mapDecorationMeshes || []) disposeMapMesh(mesh);
+      game.walls.length = 0;
+      game._mapDecorationMeshes = [];
+
+      for (const object of selectedMap.objects) {
+        const mesh = makeMapMesh(object);
+        game.worldGroup.add(mesh);
+        if (blockingTypes.has(object.type)) {
+          game.walls.push({
+            id: object.id, x: object.x, y: object.y, w: object.w, h: object.h,
+            kind: object.type === "boundary" ? "boundary" : "cover", type: object.type, mesh,
+          });
+        } else {
+          game._mapDecorationMeshes.push(mesh);
         }
       }
+      if (selectedMap.objective) {
+        const objectiveMesh = new THREE.Mesh(
+          new THREE.RingGeometry(34, 46, 32),
+          new THREE.MeshBasicMaterial({ color: selectedMap.theme.accent, transparent: true, opacity: 0.9 })
+        );
+        objectiveMesh.position.set(selectedMap.objective[0], selectedMap.objective[1], 1.5);
+        objectiveMesh.userData.breachlineMapObject = "objective";
+        game.worldGroup.add(objectiveMesh);
+        game._mapDecorationMeshes.push(objectiveMesh);
+      }
+      game.floor.material.color.set(selectedMap.theme.floor);
+      game.scene.background.set(selectedMap.theme.floor);
       game.visibilityDirty = true;
-      game._activeLayout = layout.name;
-      ui.layout.textContent = `LAYOUT // ${layout.name}`;
-      game.canvas.dataset.mapLayout = layout.name;
+      game._activeLayout = selectedMap.name;
+      game._activeMapId = selectedMap.id;
+      ui.layout.textContent = `MAP // ${selectedMap.name}`;
+      game.canvas.dataset.mapLayout = selectedMap.name;
+      game.canvas.dataset.mapId = selectedMap.id;
+    };
+
+    const bushes = selectedMap.objects.filter((object) => object.type === "bush");
+    const insideBush = (position, bush) => (
+      position.x >= bush.x - bush.w / 2 && position.x <= bush.x + bush.w / 2 &&
+      position.y >= bush.y - bush.h / 2 && position.y <= bush.y + bush.h / 2
+    );
+    const originalIsVisible = game.isVisible.bind(game);
+    game.isVisible = function (observer, target, fov, range) {
+      const targetBush = bushes.find((bush) => insideBush(target.pos, bush));
+      if (targetBush && !insideBush(observer.pos, targetBush) && observer.pos.distanceTo(target.pos) > 185) return false;
+      return originalIsVisible(observer, target, fov, range);
     };
 
     const pulseClass = (element, className) => {
@@ -531,7 +543,7 @@
         ui.smokeStatus.style.setProperty("--smoke-progress", "0%");
       }
       clearGadget();
-      applyLayout(this._roundSerial % layouts.length);
+      applyLayout();
       applyWeaponVisual(this.player, this.player.weapon.id);
       this.bots.forEach((bot) => applyWeaponVisual(bot, bot.weapon.id));
       syncGrenadeTelegraphs();
@@ -991,7 +1003,7 @@
     game.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     window.addEventListener("blur", clearGadget);
 
-    applyLayout(0);
+    applyLayout();
     applyActorRadius(game);
     applyWeaponVisual(game.player, game.player.weapon.id);
     game.bots.forEach((bot) => applyWeaponVisual(bot, bot.weapon.id));
