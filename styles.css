@@ -254,6 +254,9 @@
 }
 .spectate-bar .ghost-button:hover{border-color:var(--cyan);background:#6de6df1f}
 
+/* 방에서 시작한 게임은 엔진과 WebSocket이 준비되는 동안 로드아웃을 노출하지 않는다. */
+.multiplayer-launch #loadout{display:none!important}
+
 @media(max-width:620px){
   .scoreboard{grid-template-columns:1fr}
   .result-actions .ghost-button{padding:11px 13px;font-size:10px;letter-spacing:.1em}

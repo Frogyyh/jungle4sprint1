@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07111c" />
     <title>Visual Shooting Code</title>
+    <script>
+      if (new URLSearchParams(location.search).get("multiplayer") === "1") {
+        document.documentElement.classList.add("multiplayer-launch");
+      }
+    </script>
     <link rel="icon" href="./Asset/logo.png" />
     <script src="./operators.js"></script>
     <script type="module" src="./game.js"></script>

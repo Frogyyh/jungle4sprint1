@@ -1,8 +1,7 @@
 {
   "name": "jungle4sprint1",
   "version": "1.0.0",
-  "description": "",
-  "main": "asset-visuals.js",
+  "description": "Cloudflare Workers 기반 실시간 멀티플레이 전술 슈팅 게임",
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
