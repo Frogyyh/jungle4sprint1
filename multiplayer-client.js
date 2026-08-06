@@ -136,6 +136,8 @@
 
     const originalDamage = game.damageActor.bind(game);
     game.damageActor = function networkDamage(source, target, amount) {
+      // 남의 총알이 준 피해는 서버가 정한다 — 화면에서 미리 깎지 않는다.
+      if (source?._remote) return;
       const attackerId = controlledId(source);
       const targetId = networkIdOf(target);
       if (attackerId && targetId && attackerId !== targetId && source.team !== target.team) {
@@ -150,6 +152,22 @@
       }
       if (target === this.player && (source?._remote || source?._bot)) return;
       originalDamage(source, target, amount);
+    };
+
+    /* 총알은 각 화면이 스스로 만든다. 내가(또는 내 봇이) 쏜 사실을 서버로 보내
+       다른 화면에서도 같은 총알이 생기게 한다. 이게 없으면 상대 총알이 보이지 않는다. */
+    const originalSpawn = game.spawnProjectile.bind(game);
+    game.spawnProjectile = function networkSpawn(source, position, direction, weapon) {
+      originalSpawn(source, position, direction, weapon);
+      const shooterId = controlledId(source);
+      if (!shooterId || !active || this.phase !== "playing") return;
+      send({
+        type: "shot",
+        playerId: shooterId,
+        x: position.x,
+        y: position.y,
+        dir: Math.atan2(direction.y, direction.x),
+      });
     };
 
     /* 코어 AI 는 표적이 this.player 로 못박혀 있다. 봇마다 표적을 골라
@@ -253,6 +271,18 @@
     game.endRound(winner === own?.team, winner === own?.team ? "상대 팀을 전멸시켰습니다." : "우리 팀이 전투불능 상태가 되었습니다.");
   }
 
+  /* 남이 쏜 총알을 내 화면에도 만든다. 피해는 서버가 정하므로 이 총알은
+     맞아도 체력을 깎지 않는다(damageActor 에서 _remote 를 막아둔다). */
+  function spawnRemoteShot(message) {
+    if (!game || !active) return;
+    const actor = actors.get(message.playerId);
+    if (!actor || !actor.alive) return;
+    const origin = actor.pos.clone().set(message.x, message.y);
+    const direction = actor.pos.clone().set(Math.cos(message.dir), Math.sin(message.dir));
+    actor.dir = message.dir;
+    game.spawnProjectile(actor, origin, direction, actor.weapon);
+  }
+
   function onMessage(message) {
     if (message.type === "welcome") {
       room = message.room; playerId = message.playerId;
@@ -269,6 +299,7 @@
         game.renderUi();
       }
     }
+    if (message.type === "shot") spawnRemoteShot(message);
     if (message.type === "finish") finish(message.winner);
   }
 
@@ -296,6 +327,11 @@
   window.__multiplayer = {
     ready,
     actors,
+    // 방을 아주 떠날 때(결과창 → 로비) 서버에 알려 즉시 정리하게 한다.
+    leave() {
+      serverEnding = true; // 나가면서 나는 접속 끊김 안내는 띄우지 않는다
+      send({ type: "leave" });
+    },
     get room() { return room; },
     get playerId() { return playerId; },
   };

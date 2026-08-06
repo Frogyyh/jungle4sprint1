@@ -250,7 +250,7 @@ export class GameRoom extends DurableObject {
       for (const player of room.members) {
         player.hp = 100;
         player.alive = true;
-        player.ready = player.id === room.hostId;
+        player.ready = player.bot || player.id === room.hostId; // 봇은 언제나 준비 완료
         clearStats(player);
       }
     }
@@ -286,6 +286,8 @@ export class GameRoom extends DurableObject {
 
     if (data.type === "state") return this.handleState(room, member, data, ws);
     if (data.type === "hit") return this.handleHit(room, member, data);
+    if (data.type === "shot") return this.handleShot(room, member, data, ws);
+    if (data.type === "leave") return this.handleLeave(room, member, ws);
     if (data.type !== "action" || room.status !== "lobby") return;
     const changed = this.handleLobbyAction(room, member, data);
     if (!changed) return;
@@ -311,7 +313,10 @@ export class GameRoom extends DurableObject {
          게임 중에는 방장 화면이 AI 를 돌려 위치·피격을 대신 보고한다. */
       if (room.members.length >= room.capacity) return false;
       const perTeam = room.capacity / 2;
-      const team = room.members.filter((m) => m.team === "A").length < perTeam ? "A" : "B";
+      // 누른 자리의 팀에 넣는다. 그 팀이 꽉 찼으면 자리가 남은 쪽으로.
+      const wanted = ["A", "B"].includes(data.value) ? data.value : null;
+      const roomFor = (side) => room.members.filter((m) => m.team === side).length < perTeam;
+      const team = wanted && roomFor(wanted) ? wanted : roomFor("A") ? "A" : "B";
       const name = BOT_NAMES.find((n) => !room.members.some((m) => m.name === n))
         || `봇 ${room.members.length + 1}`;
       // 직업은 무작위 — 매번 같은 병과만 나오면 연습이 단조롭다.
@@ -376,6 +381,42 @@ export class GameRoom extends DurableObject {
     if (Number.isFinite(shots) && shots > (member.shots || 0)) member.shots = Math.min(9999, Math.floor(shots));
     await this.ctx.storage.put("room", room);
     this.broadcast(room, { type: "state", player: publicMember(member) }, ws);
+  }
+
+  /* 발사 중계. 총알은 각 화면이 스스로 만들기 때문에, 쏜 사실을 알려주지 않으면
+     남의 총알이 아예 보이지 않는다. 피해 판정은 여전히 handleHit 이 맡는다. */
+  async handleShot(room, sender, data, ws) {
+    const member = this.subjectOf(room, sender, data);
+    if (!member || room.status !== "playing" || !member.alive) return;
+    const x = Number(data.x); const y = Number(data.y); const dir = Number(data.dir);
+    if (![x, y, dir].every(Number.isFinite)) return;
+    // 샷건은 한 번에 여러 발이라 여유를 두되, 무한 스팸은 막는다.
+    const now = Date.now();
+    member.shotBurst = now - (member.lastShotAt || 0) < 120 ? (member.shotBurst || 0) + 1 : 0;
+    member.lastShotAt = now;
+    if (member.shotBurst > 12) return;
+    this.broadcast(room, {
+      type: "shot",
+      playerId: member.id,
+      characterId: member.characterId,
+      x, y, dir,
+    }, ws);
+  }
+
+  /* 방을 아주 떠날 때(결과창 → 로비). 접속만 끊긴 것과 구분해서 바로 정리한다. */
+  async handleLeave(room, member, ws) {
+    room.members = room.members.filter((m) => m.id !== member.id);
+    // 사람이 아무도 남지 않으면 봇만 남은 빈 방이다 — 유예 없이 지운다.
+    if (!room.members.some((m) => !m.bot)) {
+      await this.ctx.storage.delete("room");
+      await this.updateDirectory(room, true);
+      try { ws.close(1000, "left"); } catch { /* 이미 닫힘 */ }
+      return;
+    }
+    if (member.id === room.hostId) room.hostId = room.members.find((m) => !m.bot).id;
+    await this.save(room);
+    this.broadcast(room);
+    try { ws.close(1000, "left"); } catch { /* 이미 닫힘 */ }
   }
 
   async handleHit(room, sender, data) {

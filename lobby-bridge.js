@@ -304,6 +304,9 @@
       location.href = roomUrl();
     });
     ui.lobby?.addEventListener("click", () => {
+      // 로비로 나가는 건 방을 아주 떠나는 것 — 봇만 남은 방은 서버가 바로 지운다.
+      // ("방으로" 는 방에 남는 것이라 알리지 않는다.)
+      window.__multiplayer?.leave?.();
       location.href = LOBBY_URL;
     });
 

@@ -37,7 +37,8 @@ function renderSlots() {
           add.type = "button";
           add.className = "slot empty";
           add.textContent = "＋ 봇 추가";
-          add.addEventListener("click", () => sendAction(socket, "addbot"));
+          // 누른 자리의 팀으로 넣는다.
+          add.addEventListener("click", () => sendAction(socket, "addbot", team));
           box.appendChild(add);
         } else {
           const empty = document.createElement("div");
