@@ -75,3 +75,101 @@
 @media(max-width:620px){#loadout{padding:28px 17px 22px}.operator-loadout-grid{grid-template-columns:repeat(2,minmax(125px,1fr))}.operator-card{min-height:120px}.operator-card .card-copy{display:none}}
 
 .lobby-return-button{margin-left:10px;background:#d8e3e8}
+
+/* Fixed-view combat HUD */
+.crosshair{
+  --crosshair-color:#b8ff4d;
+  width:24px;
+  height:24px;
+  filter:drop-shadow(0 1px 1px rgba(0,0,0,.8));
+}
+.crosshair:before,.crosshair:after,.crosshair span:before,.crosshair span:after{
+  background:var(--crosshair-color);
+  border:0;
+  box-shadow:0 0 0 1px rgba(1,6,8,.92);
+}
+.crosshair:before{left:11px;top:0;width:2px;height:7px}
+.crosshair:after{left:11px;bottom:0;width:2px;height:7px}
+.crosshair span{position:absolute;inset:0;border:0;border-radius:0}
+.crosshair span:before{left:0;top:11px;width:7px;height:2px}
+.crosshair span:after{right:0;top:11px;width:7px;height:2px}
+
+.hitmarker{will-change:left,top,opacity,transform;filter:drop-shadow(0 1px 2px rgba(0,0,0,.9))}
+.hitmarker i{width:2px;background:#f8ffff;box-shadow:0 0 5px rgba(255,255,255,.8)}
+
+.smoke-status{
+  --smoke-progress:0%;
+  position:relative;
+  display:none;
+  min-width:126px;
+  padding:6px 10px 7px 24px;
+  overflow:hidden;
+  border:1px solid rgba(152,210,214,.28);
+  border-radius:3px;
+  color:#d9f2ef;
+  background:
+    linear-gradient(90deg,rgba(105,202,183,.2) 0 var(--smoke-progress),rgba(8,18,23,.86) var(--smoke-progress) 100%);
+  box-shadow:inset 0 1px rgba(255,255,255,.05),0 6px 22px rgba(0,0,0,.24);
+  font:800 9px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
+  letter-spacing:.13em;
+  text-align:left;
+  white-space:nowrap;
+}
+.smoke-status.active{display:block;animation:smoke-status-in .18s ease-out}
+.smoke-status:before{
+  content:"";
+  position:absolute;
+  left:9px;
+  top:50%;
+  width:7px;
+  height:7px;
+  border:1px solid #8de0c8;
+  border-radius:50%;
+  transform:translateY(-50%);
+  background:rgba(141,224,200,.28);
+  box-shadow:0 0 8px rgba(141,224,200,.6);
+  animation:smoke-status-pulse 1.2s ease-in-out infinite;
+}
+.smoke-status.inside{border-color:rgba(255,190,112,.46);color:#fff0d5}
+.smoke-status.inside:before{border-color:#ffc178;background:rgba(255,193,120,.3);box-shadow:0 0 9px rgba(255,193,120,.65)}
+@keyframes smoke-status-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+@keyframes smoke-status-pulse{50%{opacity:.45;transform:translateY(-50%) scale(.72)}}
+
+.smoke-overlay{
+  overflow:hidden;
+  contain:strict;
+  background:
+    radial-gradient(ellipse at 48% 46%,rgba(190,213,209,.1) 0 18%,rgba(86,108,109,.43) 48%,rgba(11,18,22,.88) 100%),
+    linear-gradient(135deg,rgba(93,126,125,.16),rgba(18,26,31,.52));
+  -webkit-backdrop-filter:none;
+  backdrop-filter:none;
+  -webkit-mask-image:none;
+  mask-image:none;
+  transition:opacity .28s ease;
+}
+.smoke-overlay:before,.smoke-overlay:after{
+  content:"";
+  position:absolute;
+  inset:-22%;
+  opacity:0;
+  will-change:transform,opacity;
+  background:
+    radial-gradient(circle at 18% 32%,rgba(205,225,218,.13) 0 9%,transparent 24%),
+    radial-gradient(circle at 72% 24%,rgba(153,183,179,.14) 0 12%,transparent 28%),
+    radial-gradient(circle at 61% 77%,rgba(186,205,200,.11) 0 13%,transparent 29%),
+    radial-gradient(circle at 31% 68%,rgba(72,96,98,.2) 0 14%,transparent 32%);
+}
+.smoke-overlay:after{transform:rotate(180deg) scale(1.08);opacity:0;background-position:12% -8%,-10% 14%,8% 5%,-6% -12%}
+.smoke-overlay.active{opacity:.93}
+.smoke-overlay.active:before{opacity:1;animation:smoke-fog-drift-a 8s ease-in-out infinite alternate}
+.smoke-overlay.active:after{opacity:.72;animation:smoke-fog-drift-b 10s ease-in-out infinite alternate}
+@keyframes smoke-fog-drift-a{from{transform:translate3d(-2%,1%,0) rotate(-2deg) scale(1)}to{transform:translate3d(3%,-2%,0) rotate(3deg) scale(1.06)}}
+@keyframes smoke-fog-drift-b{from{transform:translate3d(2%,-1%,0) rotate(178deg) scale(1.08)}to{transform:translate3d(-3%,2%,0) rotate(184deg) scale(1.02)}}
+
+@media(max-width:620px){
+  .smoke-status{min-width:112px;padding:5px 8px 6px 21px;font-size:8px}
+  .smoke-status:before{left:7px}
+}
+@media(prefers-reduced-motion:reduce){
+  .smoke-status.active,.smoke-status:before,.smoke-overlay.active:before,.smoke-overlay.active:after{animation:none}
+}
