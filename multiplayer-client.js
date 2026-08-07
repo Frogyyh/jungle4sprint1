@@ -2,6 +2,9 @@
   const params = new URLSearchParams(location.search);
   if (params.get("multiplayer") !== "1") return;
 
+  // 밸런스 모듈 — 원격 효과/판정 수치도 balance.js 단일 원본을 참조한다.
+  const B = window.BREACHLINE_BALANCE;
+
   const roomId = params.get("room");
   const stored = JSON.parse(sessionStorage.getItem("breachline.multiplayerSession") || "null");
   let socket = null;
@@ -60,7 +63,7 @@
     const iAmHost = room?.hostId === playerId;
     game.player.pos.set(own?.x ?? -520, own?.y ?? 0);
     game.player.dir = own?.dir ?? 0;
-    game.player.hp = own?.hp ?? 100;
+    game.player.hp = own?.hp ?? B.player.hp;
     game.player.alive = own?.alive !== false;
     game.player.syncMesh();
 
@@ -85,7 +88,7 @@
       actor._targetPos = position.clone();
       actor._targetDir = member.dir ?? 0;
       actor.team = member.team === own?.team ? "player" : "enemy";
-      actor.maxHp = 100; actor.hp = member.hp ?? 100; actor.alive = member.alive !== false;
+      actor.maxHp = B.player.hp; actor.hp = member.hp ?? B.player.hp; actor.alive = member.alive !== false;
       actor.dir = member.dir ?? 0;
       actor.mesh.visible = actor.alive;
       paintActor(actor, member);
@@ -441,7 +444,7 @@
       fx.l = [railSerial, Number(game.player.dir.toFixed(2)), Math.round(Math.hypot(halfWidth, halfHeight))];
     }
     if (game._revealUntil > game.now) {
-      fx.v = [Number((game._revealUntil - game.now).toFixed(2)), game._revealRange || 920];
+      fx.v = [Number((game._revealUntil - game.now).toFixed(2)), game._revealRange || B.operators.sentinel.reveal.range];
     }
     return Object.keys(fx).length ? fx : null;
   }
@@ -584,8 +587,8 @@
       const index = strips.length;
       strips.push(stripMesh(0x9bd0ff, index < 12 ? 0.14 : index < 22 ? 0.85 : 0.9));
     }
-    const half = Math.PI / 6;
-    const hpFraction = Math.max(0, Math.min(1, barrier[0] / 250));
+    const half = B.operators.bulwark.barrier.halfAngleDeg * Math.PI / 360;
+    const hpFraction = Math.max(0, Math.min(1, barrier[0] / B.operators.bulwark.barrier.maxHp));
     strips.forEach((strip) => strip.material.color.setHex(hpFraction > 0.35 ? 0x9bd0ff : 0xff8a7a));
     for (let index = 0; index < 12; index++) {
       const a = actor.dir - half + index / 12 * half * 2;
@@ -732,18 +735,18 @@
     if (!flash || entry.flashSerial === flash[0]) return;
     entry.flashSerial = flash[0];
     const direction = flash[1];
-    showRemoteBurst(actor, direction, 0xffe67d, 260, Math.PI / 3);
+    showRemoteBurst(actor, direction, 0xffe67d, B.operators.bulwark.flashShield.range, B.operators.bulwark.flashShield.halfAngleDeg * Math.PI / 360);
     if (actor.team !== "enemy" || !game.player.alive) return;
     const dx = game.player.pos.x - actor.pos.x;
     const dy = game.player.pos.y - actor.pos.y;
     const delta = Math.atan2(Math.sin(Math.atan2(dy, dx) - direction), Math.cos(Math.atan2(dy, dx) - direction));
-    if (Math.hypot(dx, dy) <= 260 && Math.abs(delta) <= Math.PI / 3) {
+    if (Math.hypot(dx, dy) <= B.operators.bulwark.flashShield.range && Math.abs(delta) <= B.operators.bulwark.flashShield.halfAngleDeg * Math.PI / 360) {
       game.player.flashedUntil = Math.max(game.player.flashedUntil, game.now + 1);
     }
   };
 
   const showMeleeArc = (actor, direction, range, color) => {
-    const halfAngle = actor.operatorId === "reaper" ? Math.PI * 0.31 : Math.PI * 0.29;
+    const halfAngle = actor.operatorId === "reaper" ? B.operators.reaper.meleeHalfAngle : B.operators.ninja.meleeHalfAngle;
     const segments = 12;
     for (let index = 0; index < segments; index++) {
       const a = direction - halfAngle + index / segments * halfAngle * 2;
@@ -769,7 +772,7 @@
       showMeleeArc(actor, direction, range, color);
     }
     entry.meleeProgress = progress;
-    const halfAngle = actor.operatorId === "reaper" ? Math.PI * 0.31 : Math.PI * 0.29;
+    const halfAngle = actor.operatorId === "reaper" ? B.operators.reaper.meleeHalfAngle : B.operators.ninja.meleeHalfAngle;
     const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
     const localAngle = side === 1
       ? -halfAngle + eased * halfAngle * 2
@@ -889,7 +892,7 @@ const isEffectVisibleAt = (actor, point) => {
     radius: 2,
     team: actor.team,
   };
-  return game.isVisible(game.player, probe, 45, 920);
+  return game.isVisible(game.player, probe, B.vision.coneDegrees, B.vision.maxRange);
 };
 
 const setRemoteEffectVisible = (actor, effect, alwaysVisible = false) => {
@@ -907,7 +910,7 @@ const syncRemoteReveal = (actor, entry, reveal) => {
   }
   entry.reveal ||= markerMesh(0xff3b45, 1.65, 0.22);
   entry.reveal.position.set(actor.pos.x, actor.pos.y, 11);
-  const range = Math.max(100, Math.min(1200, reveal[1] || 920));
+  const range = Math.max(100, Math.min(1200, reveal[1] || B.operators.sentinel.reveal.range));
   const segments = 32;
   const radii = [range * 0.55, range];
   entry.revealRings ||= [];
@@ -979,9 +982,9 @@ function syncRemoteFxVisibility() {
     syncRemoteSmokes(actor, entry, fx?.o || []);
     if (fx?.p) {
       // 유탄발사기 착탄 지점 — 폭발 반경(67) 원
-      entry.landing ||= markerMesh(0xffa8f0, 67 / 18, 0.14);
+      entry.landing ||= markerMesh(0xffa8f0, B.gadgets.launcher.radius / B.player.radius, 0.14);
       entry.landing.position.set(fx.p[0], fx.p[1], 16);
-      entry.landing.scale.setScalar(67 / 18);
+      entry.landing.scale.setScalar(B.gadgets.launcher.radius / B.player.radius);
       entry.landing.visible = true;
     } else if (entry.landing) {
       disposeMarker(entry.landing);

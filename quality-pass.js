@@ -12,12 +12,14 @@
 
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const $ = (selector) => document.querySelector(selector);
-    const FLASH_RADIUS = 200;
-    const FLASH_DURATION = 1;
-    const SMOKE_DURATION = 10;
-    const AI_FAIR_RANGE = 620;
-    const DEFAULT_VIEW_SCALE = 1.25;
-    const SNIPER_VIEW_SCALE = 1.5;
+    // 밸런스 모듈 — 인게임 수치는 balance.js 단일 원본을 참조한다.
+    const B = window.BREACHLINE_BALANCE;
+    const FLASH_RADIUS = B.gadgets.flash.radius;
+    const FLASH_DURATION = B.gadgets.flash.duration;
+    const SMOKE_DURATION = B.gadgets.smoke.duration;
+    const AI_FAIR_RANGE = B.ai.fairRange;
+    const DEFAULT_VIEW_SCALE = B.vision.camera.defaultScale;
+    const SNIPER_VIEW_SCALE = B.vision.camera.sniperScale;
 
     const ui = {
       flashGadget: $("#flash-gadget"),
@@ -299,7 +301,7 @@
     };
     game.styleGrenadeMesh = styleGrenadeMesh;
 
-    const gadgetRadius = (type) => ({ flash: 200, smoke: 150, frag: 100, launcher: 67 }[type] || 100);
+    const gadgetRadius = (type) => ({ flash: B.gadgets.flash.radius, smoke: B.gadgets.smoke.radius, frag: B.gadgets.frag.radius, launcher: B.gadgets.launcher.radius }[type] || 100);
     game.getGadgetRadius = gadgetRadius;
 
     const predictGrenadeLanding = (actor, type, power, target) => {
@@ -310,8 +312,8 @@
       direction.normalize();
 
       const position = actor.pos.clone().add(direction.clone().multiplyScalar(32));
-      const velocity = direction.clone().multiplyScalar((type === "launcher" ? 620 : 500) * clamp(power, 0.8, 2));
-      let fuse = type === "frag" ? 2 : 1.5;
+      const velocity = direction.clone().multiplyScalar((type === "launcher" ? B.gadgets.launcher.speed : 500) * clamp(power, 0.8, 2));
+      let fuse = type === "frag" ? B.gadgets.frag.fuse : B.gadgets.flash.fuse;
       const fixedStep = 1 / 60;
       while (fuse > 0) {
         const step = Math.min(fixedStep, fuse);
@@ -471,7 +473,7 @@
 
     // 폭탄마: 유탄 발사 중에는 착탄 지점에 폭발 반경(67) 고리와 도달 예상 시간을
     // 고정 표시한다. 조준 중에는 아무것도 표시하지 않는다(크로스헤어 원 제거).
-    const LAUNCHER_RADIUS = 67;
+    const LAUNCHER_RADIUS = B.gadgets.launcher.radius;
     const updateLauncherPreview = () => {
       if (game.activeOperatorId !== "demolitionist") return; // 다른 캐릭터 프리뷰를 건드리지 않는다
       const inFlight = game.grenades.find((grenade) => grenade.directFire);
@@ -616,7 +618,7 @@
 
     // 부채꼴 외에 캐릭터 주변에 항상 보이는 원형 시야 (반경 100, 벽/연막 차단 적용).
     // 아이언(시야각 20도 제한)에게도 동일하게 360도 원형으로 적용된다.
-    const NEAR_VISION_RADIUS = 100;
+    const NEAR_VISION_RADIUS = B.vision.nearRadius;
 
     const originalVisible = game.isVisible.bind(game);
     game.isVisible = function (observer, target, coneDegrees, distance) {

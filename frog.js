@@ -6,35 +6,24 @@
       return;
     }
 
-    const FROG = {
-      id: "frog",
-      name: "FROG BUBBLE SPRAYER",
-      damage: 4,
-      pellets: 5,
-      rpm: 300,
-      spreadDeg: 12,
-      magSize: 999,
-      reserve: 9999,
-      reload: 2.5,
-      range: 900,
-      projectileSpeed: 1200,
-      color: 0x7eeeff,
-    };
+    // 밸런스 모듈 — 인게임 수치는 balance.js 단일 원본을 참조한다.
+    const B = window.BREACHLINE_BALANCE;
+    const FROG = B.operators.frog.weapon;
     // Remote frogs must use the Bubble Sprayer, regardless of the local loadout.
     game.frogWeapon = FROG;
     const vec = (x = 0, y = 0) => new game.player.pos.constructor(x, y);
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const ATTACHED_VISION_RADIUS = Math.round(920 * 0.33); // 시야 최대 거리(920)의 33% → 304
-    const TONGUE_PULL_SPEED = 1500;
-    const MIN_TONGUE_LENGTH = 48;
-    const WALL_TONGUE_ADJUST = 72;
-    const FROG_MOMENTUM_MAX = 430;
-    const FROG_MOMENTUM_DAMPING = 0.035;
-    const AUTO_BUBBLE_INTERVAL = 0.32;
+    const ATTACHED_VISION_RADIUS = Math.round(B.vision.maxRange * B.operators.frog.attachedVisionRatio); // 시야 최대 거리의 33% → 304
+    const TONGUE_PULL_SPEED = B.operators.frog.tongue.pullSpeed;
+    const MIN_TONGUE_LENGTH = B.operators.frog.tongue.minLength;
+    const WALL_TONGUE_ADJUST = B.operators.frog.tongue.wallAdjust;
+    const FROG_MOMENTUM_MAX = B.operators.frog.momentum.max;
+    const FROG_MOMENTUM_DAMPING = B.operators.frog.momentum.damping;
+    const AUTO_BUBBLE_INTERVAL = B.operators.frog.autoBubbleInterval;
     const AUTO_BUBBLE = {
       id: "frog-auto-bubble",
       name: "SWING BUBBLE",
-      damage: 2,
+      damage: B.operators.frog.bubble.damage,
       pellets: 1,
       rpm: 1,
       spreadDeg: 0,
@@ -42,8 +31,8 @@
       reserve: 1,
       reload: 1,
       range: ATTACHED_VISION_RADIUS + 30,
-      projectileSpeed: 920,
-      color: 0x83ffad,
+      projectileSpeed: B.operators.frog.bubble.speed,
+      color: B.operators.frog.bubble.color,
     };
     const isFrog = () => game.activeOperatorId === "frog" || game.player.weapon?.id === "frog";
     let tongue = null;

@@ -13,8 +13,10 @@ const ALLOWED_PROJECTILES = new Set([
   "dual_pistols", "shield_pistol", "rifle", "frog", "frog-auto-bubble",
   "shotgun", "dagger", "bolt_action",
 ]);
+/* 병과별 단일 히트 피해 상한 — 클라이언트 balance.js 의 무기/스킬 데미지와 일치시킨다.
+   (건슬링거 건카타 50, 센티널 레일건 40, 군인 35, 개구리 18, ...) */
 const DAMAGE_LIMITS = {
-  gunslinger: 34, bulwark: 45, sentinel: 38, soldier: 35, frog: 18,
+  gunslinger: 50, bulwark: 45, sentinel: 40, soldier: 35, frog: 18,
   reaper: 48, hunter: 55, ninja: 65, sniper: 100, demolitionist: 85,
 };
 
