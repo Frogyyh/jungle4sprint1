@@ -64,7 +64,7 @@ const cleanFx = (fx) => {
   const cleaned = {};
   const tongue = numbers(fx.t, 2);
   const melee = numbers(fx.m, 5); // [방향, 사거리, 색, 측면, 진행률]
-  const dash = numbers(fx.d, 2);
+  const dash = numbers(fx.d, 3);
   const barrier = numbers(fx.b, 1);
   const railCharge = numbers(fx.r, 1);
   const scythe = numbers(fx.s, 4);
