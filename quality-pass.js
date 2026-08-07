@@ -33,6 +33,8 @@
       smokeStatus: $("#smoke-status"),
       hitmarker: $("#hitmarker"),
       damage: $("#damage-overlay"),
+      damageDirection: $("#damage-direction-world"),
+      damageBorder: $("#damage-direction-border"),
       smoke: $("#smoke-overlay"),
       muzzle: $("#muzzle-flash"),
       status: $("#status-message"),
@@ -340,6 +342,35 @@
         unitsToPixels: rect.width / (camera.right - camera.left),
         rect
       };
+    };
+
+    game.showDamageDirection = (sourcePosition) => {
+      if (!sourcePosition || !ui.damageDirection || !ui.damageBorder) return;
+      const playerScreen = worldToScreen(game.player.pos);
+      const sourceScreen = worldToScreen(sourcePosition);
+      const dx = sourceScreen.x - playerScreen.x;
+      const dy = sourceScreen.y - playerScreen.y;
+      const distance = Math.hypot(dx, dy) || 1;
+      const nx = dx / distance;
+      const ny = dy / distance;
+      const angle = Math.atan2(ny, nx) * 180 / Math.PI;
+      ui.damageDirection.style.left = `${playerScreen.x + nx * 62}px`;
+      ui.damageDirection.style.top = `${playerScreen.y + ny * 62}px`;
+      ui.damageDirection.style.transform = `translate(-50%,-50%) rotate(${angle}deg)`;
+
+      const edgeWeights = {
+        top: Math.max(0, -ny),
+        right: Math.max(0, nx),
+        bottom: Math.max(0, ny),
+        left: Math.max(0, -nx),
+      };
+      for (const [edge, weight] of Object.entries(edgeWeights)) {
+        const element = ui.damageBorder.querySelector(`.${edge}`);
+        if (element) element.style.opacity = `${0.12 + weight * 0.88}`;
+      }
+      pulseClass(ui.damageDirection, "active");
+      pulseClass(ui.damageBorder, "active");
+      game.canvas.dataset.lastDamageDirection = `${Math.round(angle)}`;
     };
 
     const positionTelegraph = (element, point, type, radius, progress, label, enemy = false) => {
@@ -853,6 +884,7 @@
         this.cameraShake = Math.min(12, this.cameraShake + 6);
         pulseClass(ui.damage, "active");
         pulseClass(ui.health, "hit");
+        game.showDamageDirection(source?.pos);
       }
     };
 

@@ -217,12 +217,14 @@
 
     const enterSpectate = (actor, member) => {
       watching = actor;
+      game._spectating = true;
       if (spectateName) spectateName.textContent = member ? `${member.name} 관전 중` : "관전 중";
       if (ui.screen.classList.contains("hidden")) ui.spectateBar?.classList.remove("hidden");
     };
 
     const leaveSpectate = () => {
       watching = null;
+      game._spectating = false;
       ui.spectateBar?.classList.add("hidden");
     };
 
@@ -241,6 +243,11 @@
 
     game.updateCamera = withWatched(game.updateCamera.bind(game));
     game.updateVisibility = withWatched(game.updateVisibility.bind(game));
+    const originalSpectatorVisibility = game.isVisible.bind(game);
+    game.isVisible = function spectatorVisibility(observer, target, coneDegrees, distance) {
+      if (watching?.alive && target?.alive) return true;
+      return originalSpectatorVisibility(observer, target, coneDegrees, distance);
+    };
 
     const originalStep = game.step.bind(game);
     game.step = function stepWithSpectator(dt) {

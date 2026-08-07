@@ -82,7 +82,7 @@ await Promise.all([
 
 const skillFx = {
   t: [-320, 80], m: [0.25, 120, 0xff739f, 1, 0.5], d: [0, 0.25, 0.5], b: [210], r: [0.75],
-  s: [-280, 30, 1, 1.25], u: [[1, -360, 30, 10], [2, -350, 55, 10], [3, -340, 80, 10]],
+  s: [-280, 30, 1, 1.25], u: [[1, -360, 30, 1], [2, -350, 55, 1], [3, -340, 80, 1]],
   g: [[101, 0, -300, 20, 0.8, 1.5], [102, 3, -260, 25, 0, 0]],
   o: [[201, -240, 25, 225, 1, 4.5]], f: [1.25, 0.25], l: [3, 0.25, 1300], v: [6.5, 920],
   p: [-250, 25],
@@ -120,6 +120,7 @@ await new Promise((resolve) => setTimeout(resolve, 50));
 host.send(JSON.stringify({ type: "hit", targetId: joined.playerId, damage: 20 }));
 const hit = await guest.next((message) => message.type === "hit" && message.targetId === joined.playerId);
 if (hit.hp !== 80) throw new Error(`hit synchronization mismatch: ${hit.hp}`);
+if (hit.sourceX !== -400 || hit.sourceY !== 25) throw new Error("damage direction source mismatch");
 
 host.terminate(); guest.terminate();
 console.log(`OK room=${created.room.id} host=${hostWelcome.playerId} guestHp=${hit.hp}`);

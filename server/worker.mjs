@@ -568,7 +568,11 @@ export class GameRoom extends DurableObject {
     }
     if (room.status === "finished") await this.save(room);
     else await this.persistRealtime(room);
-    this.broadcast(room, { type: "hit", attackerId: attacker.id, targetId: target.id, damage, hp: target.hp, alive: target.alive, slowed });
+    this.broadcast(room, {
+      type: "hit", attackerId: attacker.id, targetId: target.id,
+      damage, hp: target.hp, alive: target.alive, slowed,
+      sourceX: attacker.x, sourceY: attacker.y,
+    });
     if (room.status === "finished") this.broadcast(room, { type: "finish", winner: room.winner, room: this.publicRoom(room) });
   }
 

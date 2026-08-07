@@ -1388,7 +1388,7 @@
           id: ++game._summonSerial,
           pos,
           mesh,
-          hp: 10, // 해골 체력 10 (기존 25)
+          hp: 1,
           nextDamageAt: 0,
           expireAt: game.now + 20,
           swingAt: 0,
@@ -1423,12 +1423,11 @@
       game._summons.splice(index, 1);
     }
 
-    const damageSummon = (summonId, amount) => {
+    const damageSummon = (summonId) => {
       const index = game._summons.findIndex((summon) => summon.id === summonId);
       if (index < 0) return false;
       const summon = game._summons[index];
-      summon.hp -= Math.max(1, Number(amount) || 1);
-      if (summon.hp > 0) return true;
+      summon.hp = 0; // Any valid hit destroys a summoned undead.
       for (let burst = 0; burst < 6; burst++) {
         const angle = burst / 6 * Math.PI * 2;
         const dir = vector(Math.cos(angle), Math.sin(angle));

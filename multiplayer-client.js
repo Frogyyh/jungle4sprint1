@@ -1099,6 +1099,7 @@ function syncRemoteFxVisibility() {
       const actor = actors.get(message.targetId);
       if (actor) { actor.hp = message.hp; actor.alive = message.alive; actor.mesh.visible = message.alive; }
       if (message.targetId === playerId && game) {
+        game.showDamageDirection?.({ x: message.sourceX, y: message.sourceY });
         game.player.hp = message.hp; game.player.alive = message.alive;
         if (message.slowed) game._networkSlowUntil = performance.now() + 1000;
         game.renderUi();

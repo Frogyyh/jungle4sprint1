@@ -254,6 +254,20 @@
 }
 .spectate-bar .ghost-button:hover{border-color:var(--cyan);background:#6de6df1f}
 
+/* Incoming damage direction: a chevron beside the player plus weighted screen edges. */
+.damage-direction-world{position:absolute;z-index:15;width:34px;height:18px;opacity:0;pointer-events:none;transform:translate(-50%,-50%);filter:drop-shadow(0 0 8px #ff2028)}
+.damage-direction-world:before{content:"";position:absolute;inset:1px 0 1px 6px;background:linear-gradient(90deg,#ff343b,#ff9194);clip-path:polygon(0 28%,62% 28%,62% 0,100% 50%,62% 100%,62% 72%,0 72%)}
+.damage-direction-world.active{animation:damage-direction-pop .58s ease-out}
+@keyframes damage-direction-pop{0%{opacity:0}15%{opacity:1}65%{opacity:.82}100%{opacity:0}}
+.damage-direction-border{position:absolute;z-index:13;inset:0;opacity:0;pointer-events:none}
+.damage-direction-border i{position:absolute;display:block;background:#ff252d;box-shadow:0 0 24px 12px rgba(255,25,35,.62)}
+.damage-direction-border .top,.damage-direction-border .bottom{left:0;width:100%;height:7px}
+.damage-direction-border .top{top:0}.damage-direction-border .bottom{bottom:0}
+.damage-direction-border .left,.damage-direction-border .right{top:0;width:7px;height:100%}
+.damage-direction-border .left{left:0}.damage-direction-border .right{right:0}
+.damage-direction-border.active{animation:damage-border-pulse .62s ease-out}
+@keyframes damage-border-pulse{0%{opacity:0}12%{opacity:1}55%{opacity:.7}100%{opacity:0}}
+
 /* 방에서 시작한 게임은 엔진과 WebSocket이 준비되는 동안 로드아웃을 노출하지 않는다. */
 .multiplayer-launch #loadout{display:none!important}
 
