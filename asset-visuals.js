@@ -346,7 +346,7 @@
     };
 
     const updateGunKataPose = (actor, active) => {
-      if (actor !== game.player || actor._visualWeaponId !== "dual_pistols") return;
+      if (actor._visualWeaponId !== "dual_pistols") return;
       const pieces = actor._weaponVisualRoot?.children?.filter((piece) => piece.userData?.breachlineAssetWeapon) || [];
       if (active) {
         const pistolLeftTexture = getTexture(`${WEAPON_ROOT}/pistol-l.png`);
@@ -379,7 +379,8 @@
 
     const updateActorVisual = (actor) => {
       applyCharacterVisual(actor);
-      const gunKataActive = actor === game.player && game._operatorDash?.kind === "gunslinger";
+      const gunKataActive = (actor === game.player && game._operatorDash?.kind === "gunslinger")
+        || actor._remoteGunKataActive;
       updateCharacterTransform(actor, gunKataActive);
       updateTeamIdentification(actor);
       updateGunKataPose(actor, gunKataActive);

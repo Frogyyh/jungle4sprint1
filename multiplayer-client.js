@@ -109,6 +109,7 @@
       const delta = Math.atan2(Math.sin(actor._targetDir - actor.dir), Math.cos(actor._targetDir - actor.dir));
       actor.dir += delta * blend;
       actor.syncMesh();
+      if (actor._remoteGunKataActive) actor.mesh.rotation.z = actor._remoteGunKataRotation;
     }
   }
 
@@ -126,6 +127,11 @@
   function installGameHooks() {
     if (!game || game._multiplayerHooksInstalled) return;
     game._multiplayerHooksInstalled = true;
+    const originalRendererRender = game.renderer.render.bind(game.renderer);
+    game.renderer.render = function renderWithRemoteFxVisibility(scene, camera) {
+      syncRemoteFxVisibility();
+      return originalRendererRender(scene, camera);
+    };
     const originalStart = game.startRound.bind(game);
     game.startRound = function startMultiplayerRound() {
       originalStart();
@@ -337,7 +343,10 @@
     const dash = game._operatorDash;
     if (dash && game.now < dash.until) {
       const kind = { gunslinger: 0, hunter: 1, ninja: 2 }[dash.kind];
-      if (kind !== undefined) fx.d = [kind, Number(game.player.dir.toFixed(2))];
+      if (kind !== undefined) {
+        const progress = Math.min(1, Math.max(0, (game.now - dash.startedAt) / Math.max(0.01, dash.until - dash.startedAt)));
+        fx.d = [kind, Number(game.player.dir.toFixed(2)), Number(progress.toFixed(2))];
+      }
     }
     if (game._barrier?.active) fx.b = [Math.max(0, Math.round(game._barrier.hp))];
     if (game._railChargeStartedAt !== null && !game._railNeedsRelease) {
@@ -414,7 +423,11 @@
     grenade.telegraph?.remove();
     const type = ["flash", "smoke", "frag", "launcher"][grenade.type];
     if (!type) return disposeMarker(grenade.mesh);
+    const previousChildren = new Set(game.fxGroup.children);
     game.explode({ type, pos: actor.pos.clone().set(grenade.x, grenade.y), owner: actor, mesh: grenade.mesh });
+    for (const child of game.fxGroup.children) {
+      if (!previousChildren.has(child)) child.userData.remoteFxOwner = actor;
+    }
   };
 
   const syncRemoteGrenades = (actor, entry, rows = []) => {
@@ -484,6 +497,7 @@
       game.explode({ type: "smoke", pos: point, owner: actor, ninjaSmoke: Boolean(ninja), mesh });
       const smoke = game.smokes.length > before ? game.smokes[game.smokes.length - 1] : null;
       if (smoke) {
+        smoke.owner = actor;
         smoke.radius = radius;
         smoke.endAt = game.now + remaining;
         smoke.mesh?.scale?.setScalar(radius / 150);
@@ -559,6 +573,7 @@
     for (let index = 0; index < count; index++) {
       const angle = direction + (halfAngle ? -halfAngle + index / (count - 1) * halfAngle * 2 : 0);
       const strip = stripMesh(index % 2 ? color : 0xffffff, 0.85);
+      strip.userData.remoteFxOwner = actor;
       const start = halfAngle ? actor.pos : {
         x: actor.pos.x + Math.cos(angle) * (actor.radius + 10),
         y: actor.pos.y + Math.sin(angle) * (actor.radius + 10),
@@ -569,6 +584,60 @@
       }, halfAngle ? 5 : index ? 13 : 4);
       window.setTimeout(() => disposeStrip(strip), halfAngle ? 340 : 220);
     }
+  };
+
+  const syncGunKata = (actor, entry, dash) => {
+    const active = dash?.[0] === 0 && actor.alive;
+    if (!active) {
+      for (const strip of [...(entry.gunKataRing || []), ...(entry.gunKataSpin || [])]) disposeStrip(strip);
+      disposeMarker(entry.gunKataPulse);
+      entry.gunKataRing = [];
+      entry.gunKataSpin = [];
+      entry.gunKataPulse = null;
+      if (actor._remoteGunKataActive) game.applyWeaponVisual?.(actor, actor.weapon?.id);
+      actor._remoteGunKataActive = false;
+      actor.mesh.rotation.z = actor.dir;
+      return;
+    }
+
+    const direction = dash[1];
+    const progress = dash[2];
+    const radius = 115;
+    entry.gunKataRing ||= [];
+    entry.gunKataSpin ||= [];
+    while (entry.gunKataRing.length < 28) {
+      const strip = stripMesh(0xffd166, 0.72);
+      strip.userData.remoteFxOwner = actor;
+      entry.gunKataRing.push(strip);
+    }
+    while (entry.gunKataSpin.length < 2) {
+      const strip = stripMesh(0xffd166, 0.85);
+      strip.userData.remoteFxOwner = actor;
+      entry.gunKataSpin.push(strip);
+    }
+    if (!entry.gunKataPulse) {
+      entry.gunKataPulse = markerMesh(0xffd166, 4.8, 0.11);
+      entry.gunKataPulse.userData.remoteFxOwner = actor;
+    }
+    for (let index = 0; index < entry.gunKataRing.length; index++) {
+      const a = Math.PI * 2 * index / entry.gunKataRing.length;
+      const b = Math.PI * 2 * (index + 1) / entry.gunKataRing.length;
+      placeStrip(entry.gunKataRing[index],
+        { x: actor.pos.x + Math.cos(a) * radius, y: actor.pos.y + Math.sin(a) * radius },
+        { x: actor.pos.x + Math.cos(b) * radius, y: actor.pos.y + Math.sin(b) * radius }, 3.2);
+    }
+    const spin = direction + progress * Math.PI * 8;
+    [-1, 1].forEach((side, index) => {
+      const angle = spin + side * Math.PI / 2;
+      placeStrip(entry.gunKataSpin[index],
+        { x: actor.pos.x + Math.cos(angle) * 13, y: actor.pos.y + Math.sin(angle) * 13 },
+        { x: actor.pos.x + Math.cos(angle) * 64, y: actor.pos.y + Math.sin(angle) * 64 }, 3.5);
+    });
+    entry.gunKataPulse.position.set(actor.pos.x, actor.pos.y, 11);
+    entry.gunKataPulse.scale.setScalar(4.4 + Math.sin(progress * Math.PI) * 0.8);
+    actor._remoteGunKataActive = true;
+    actor._remoteGunKataRotation = spin;
+    actor.mesh.rotation.z = spin;
   };
 
   const applyFlashShield = (actor, entry, flash) => {
@@ -592,6 +661,7 @@
       const a = direction - halfAngle + index / segments * halfAngle * 2;
       const b = direction - halfAngle + (index + 1) / segments * halfAngle * 2;
       const strip = stripMesh(color, 0.72);
+      strip.userData.remoteFxOwner = actor;
       placeStrip(strip,
         { x: actor.pos.x + Math.cos(a) * range, y: actor.pos.y + Math.sin(a) * range },
         { x: actor.pos.x + Math.cos(b) * range, y: actor.pos.y + Math.sin(b) * range }, 3.8);
@@ -639,6 +709,7 @@
       else if (part.material) part.material = part.material.clone();
     });
     source.visible = false;
+    scythe.userData.remoteFxOwner = actor;
     game.fxGroup.add(scythe);
     return scythe;
   };
@@ -659,16 +730,61 @@
       if (playerId && id !== playerId) continue;
       if (entry.tongue) disposeStrip(entry.tongue);
       if (entry.melee) disposeStrip(entry.melee);
-      for (const strip of [...(entry.barrier || []), ...(entry.railCharge || [])]) disposeStrip(strip);
-      for (const marker of [entry.dash, entry.reveal, ...(entry.summons || [])]) {
+      for (const strip of [
+        ...(entry.barrier || []), ...(entry.railCharge || []),
+        ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
+      ]) disposeStrip(strip);
+      for (const marker of [entry.dash, entry.reveal, entry.gunKataPulse, ...(entry.summons || [])]) {
         disposeMarker(marker);
       }
-      disposeRemoteScythe(actors.get(id), entry.scythe);
+      const actor = actors.get(id);
+      if (actor?._remoteGunKataActive) {
+        actor._remoteGunKataActive = false;
+        actor.mesh.rotation.z = actor.dir;
+      }
+      disposeRemoteScythe(actor, entry.scythe);
       for (const grenade of entry.grenades?.values?.() || []) {
         grenade.telegraph?.remove();
         disposeMarker(grenade.mesh);
       }
       remoteFx.delete(id);
+    }
+  }
+
+  const setFxVisible = (effect, visible) => {
+    if (effect) effect.visible = visible;
+  };
+
+  function syncRemoteFxVisibility() {
+    for (const [id, entry] of remoteFx) {
+      const actor = actors.get(id);
+      if (!actor) continue;
+      const visible = actor.alive && (actor.team !== "enemy" || actor.mesh.visible);
+      setFxVisible(entry.tongue, visible);
+      setFxVisible(entry.dash, visible);
+      setFxVisible(entry.scythe, visible);
+      setFxVisible(entry.reveal, visible);
+      setFxVisible(entry.gunKataPulse, visible);
+      for (const effect of [
+        ...(entry.barrier || []), ...(entry.railCharge || []), ...(entry.summons || []),
+        ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
+      ]) setFxVisible(effect, visible);
+      for (const grenade of entry.grenades?.values?.() || []) {
+        setFxVisible(grenade.mesh, visible);
+        if (grenade.telegraph) grenade.telegraph.style.visibility = visible ? "" : "hidden";
+      }
+    }
+    for (const child of game.fxGroup.children) {
+      const owner = child.userData?.remoteFxOwner;
+      if (owner) child.visible = owner.alive && (owner.team !== "enemy" || owner.mesh.visible);
+    }
+    for (const projectile of game.projectiles) {
+      const owner = projectile.source;
+      if (owner?._remote) projectile.mesh.visible = owner.alive && (owner.team !== "enemy" || owner.mesh.visible);
+    }
+    for (const smoke of game.smokes) {
+      const owner = smoke.owner;
+      if (owner?._remote) smoke.mesh.visible = owner.alive && (owner.team !== "enemy" || owner.mesh.visible);
     }
   }
 
@@ -689,7 +805,9 @@
     // 근접 휘두름 — 앞쪽으로 뻗는 짧은 궤적
     syncRemoteMelee(actor, entry, fx?.m);
 
-    if (fx?.d && actor.alive) {
+    syncGunKata(actor, entry, fx?.d);
+
+    if (fx?.d && fx.d[0] !== 0 && actor.alive) {
       const colors = [0xffd166, 0x9ef0ff, 0x9bb5ff];
       if (!entry.dash || entry.dashKind !== fx.d[0]) {
         disposeMarker(entry.dash);
