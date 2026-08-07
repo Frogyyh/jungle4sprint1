@@ -363,6 +363,9 @@
         Number(Math.max(0, grenade.initialFuse || grenade.fuse || 0).toFixed(2)),
       ]);
     }
+    // 유탄발사기 직사 유탄의 착탄 지점 — 받는 쪽에 폭발 범위를 그린다
+    const directFire = (game.grenades || []).find((grenade) => grenade.directFire && grenade.owner === game.player);
+    if (directFire) fx.p = [Math.round(directFire.targetPos.x), Math.round(directFire.targetPos.y)];
     const ownSmokes = (game.smokes || []).filter((smoke) => smoke.owner === game.player && smoke.endAt > game.now);
     if (ownSmokes.length) {
       fx.o = ownSmokes.slice(0, 4).map((smoke) => [
@@ -425,7 +428,7 @@
       let grenade = entry.grenades.get(id);
       if (!grenade) {
         const colors = [0xffe67d, 0x9bb5ff, 0xff6b67, 0xffa8f0];
-        const mesh = markerMesh(colors[type] || 0xffffff, 0.34, 0.95);
+        const mesh = markerMesh(colors[type] || 0xffffff, type === 3 ? 0.5 : 0.34, 0.95);
         game.styleGrenadeMesh?.({ type: ["flash", "smoke", "frag", "launcher"][type], mesh });
         let telegraph = null;
         if (type !== 3) {
@@ -434,9 +437,19 @@
           telegraph.innerHTML = '<div class="telegraph-sweep"></div><div class="telegraph-core"><span class="telegraph-icon">!</span></div><span class="telegraph-time">0.0s</span>';
           document.querySelector("#throw-telegraphs")?.appendChild(telegraph);
         }
-        grenade = { id, type, x, y, fuse, initialFuse, mesh, telegraph };
+        grenade = {
+          id, type, x, y, fuse, initialFuse, mesh, telegraph,
+          trail: type === 3 ? stripMesh(0xffa8f0, 0.55) : null, // 직사 유탄 비행 궤적
+          prevX: x,
+          prevY: y,
+        };
         entry.grenades.set(id, grenade);
       }
+      if (grenade.trail) {
+        placeStrip(grenade.trail, { x: grenade.prevX, y: grenade.prevY }, { x, y }, 2.6);
+      }
+      grenade.prevX = x;
+      grenade.prevY = y;
       grenade.x = x;
       grenade.y = y;
       grenade.fuse = fuse;
@@ -460,6 +473,7 @@
     }
     for (const [id, grenade] of [...entry.grenades]) {
       if (activeIds.has(id)) continue;
+      if (grenade.trail) disposeStrip(grenade.trail);
       detonateRemoteGrenade(actor, grenade);
       entry.grenades.delete(id);
     }
@@ -658,24 +672,111 @@
     for (const [id, entry] of remoteFx) {
       if (playerId && id !== playerId) continue;
       if (entry.tongue) disposeStrip(entry.tongue);
-      if (entry.melee) disposeStrip(entry.melee);
+      if (entry.dashGhosts) entry.dashGhosts.forEach(disposeStrip);
       for (const strip of [...(entry.barrier || []), ...(entry.railCharge || [])]) disposeStrip(strip);
-      for (const marker of [entry.dash, entry.reveal, ...(entry.summons || [])]) {
+      for (const marker of [entry.dash, entry.reveal, entry.landing, ...(entry.summons || [])]) {
         disposeMarker(marker);
       }
       disposeRemoteScythe(actors.get(id), entry.scythe);
       for (const grenade of entry.grenades?.values?.() || []) {
         grenade.telegraph?.remove();
+        if (grenade.trail) disposeStrip(grenade.trail);
         disposeMarker(grenade.mesh);
       }
       remoteFx.delete(id);
     }
   }
 
+  /* 낫 투척 — 회전 블레이드 + 몸체 마커 */
+
+  /* 대쉬 — 몸체 마커 + 뒤쪽 잔상 */
+  const syncRemoteDash = (actor, entry, fx) => {
+    if (fx?.d && actor.alive) {
+      const colors = [0xffd166, 0x9ef0ff, 0x9bb5ff];
+      if (!entry.dash || entry.dashKind !== fx.d[0]) {
+        disposeMarker(entry.dash);
+        entry.dash = markerMesh(colors[fx.d[0]] || 0xffffff, 1.45, 0.24);
+        entry.dashKind = fx.d[0];
+      }
+      entry.dash.position.set(actor.pos.x, actor.pos.y, 12);
+      const back = fx.d[1] + Math.PI;
+      entry.dashGhosts ||= [
+        stripMesh(colors[fx.d[0]] || 0xffffff, 0.35),
+        stripMesh(colors[fx.d[0]] || 0xffffff, 0.2),
+      ];
+      entry.dashGhosts.forEach((strip, index) => {
+        const distance = 24 + index * 20;
+        const ox = actor.pos.x + Math.cos(back) * distance;
+        const oy = actor.pos.y + Math.sin(back) * distance;
+        placeStrip(strip, { x: ox - 9, y: oy }, { x: ox + 9, y: oy }, 6);
+      });
+    } else if (entry.dash) {
+      disposeMarker(entry.dash);
+      entry.dash = null;
+      if (entry.dashGhosts) {
+        entry.dashGhosts.forEach(disposeStrip);
+        entry.dashGhosts = null;
+      }
+    }
+  };
+
+  /* 시야 밖 효과는 삭제하지 않고 숨긴다 — 다시 시야에 들어오면 즉시 복원 */
+  const remoteCosmeticMeshes = (entry) => [
+    entry.tongue,
+    entry.dash,
+    entry.railCharge,
+    entry.scythe,
+    entry.reveal,
+    entry.landing,
+    ...(entry.dashGhosts || []),
+    ...(entry.barrier || []),
+    ...(entry.summons || []),
+  ];
+
   function applyRemoteFx(playerId, fx) {
     const actor = actors.get(playerId);
     if (!actor || actor._bot) return; // 내 봇은 내 화면이 직접 그린다
     const entry = remoteFx.get(playerId) || {};
+    entry.actor = actor;
+
+    // 시야·상호작용과 무관하게 항상 동기화해야 하는 것들 (연막 시야 차단, 투척물, 유탄 착탄 지점)
+    syncRemoteGrenades(actor, entry, fx?.g || []);
+    syncRemoteSmokes(actor, entry, fx?.o || []);
+    if (fx?.p) {
+      // 유탄발사기 착탄 지점 — 폭발 반경(67) 원
+      entry.landing ||= markerMesh(0xffa8f0, 67 / 18, 0.14);
+      entry.landing.position.set(fx.p[0], fx.p[1], 16);
+      entry.landing.scale.setScalar(67 / 18);
+      entry.landing.visible = true;
+    } else if (entry.landing) {
+      disposeMarker(entry.landing);
+      entry.landing = null;
+    }
+
+    // 피아식별 규칙: 적은 내 시야(원형/부채꼴/연막 내부) 안에 있을 때만 효과가 보인다.
+    const inView = actor.team === "player" || game.isVisible(game.player, actor, 45, 920);
+    if (!inView) {
+      for (const mesh of remoteCosmeticMeshes(entry)) {
+        if (mesh) mesh.visible = false;
+      }
+      if (entry.grenades) {
+        for (const grenade of entry.grenades.values()) {
+          if (grenade.mesh) grenade.mesh.visible = false;
+          if (grenade.trail) grenade.trail.visible = false;
+        }
+      }
+      remoteFx.set(playerId, entry);
+      return;
+    }
+    for (const mesh of remoteCosmeticMeshes(entry)) {
+      if (mesh) mesh.visible = true;
+    }
+    if (entry.grenades) {
+      for (const grenade of entry.grenades.values()) {
+        if (grenade.mesh) grenade.mesh.visible = true;
+        if (grenade.trail) grenade.trail.visible = true;
+      }
+    }
 
     // 개구리 혀 — 사람과 혀끝을 잇는 선
     if (fx?.t && actor.alive) {
@@ -686,22 +787,9 @@
       entry.tongue = null;
     }
 
-    // 근접 휘두름 — 앞쪽으로 뻗는 짧은 궤적
+    // 근접 휘두름 — 무기 휘두르기 애니메이션 + 사거리 호 (상대 수신)
     syncRemoteMelee(actor, entry, fx?.m);
-
-    if (fx?.d && actor.alive) {
-      const colors = [0xffd166, 0x9ef0ff, 0x9bb5ff];
-      if (!entry.dash || entry.dashKind !== fx.d[0]) {
-        disposeMarker(entry.dash);
-        entry.dash = markerMesh(colors[fx.d[0]] || 0xffffff, 1.45, 0.24);
-        entry.dashKind = fx.d[0];
-      }
-      entry.dash.position.set(actor.pos.x, actor.pos.y, 12);
-    } else if (entry.dash) {
-      disposeMarker(entry.dash);
-      entry.dash = null;
-    }
-
+    syncRemoteDash(actor, entry, fx);
     syncBarrier(actor, entry, fx?.b);
 
     syncRailCharge(actor, entry, fx?.r);
@@ -720,9 +808,12 @@
       entry.scythe = null;
     }
 
-    syncPointMarkers(entry, "summons", fx?.u || [], 0xc7d0d5, 0.72);
-    syncRemoteGrenades(actor, entry, fx?.g || []);
-    syncRemoteSmokes(actor, entry, fx?.o || []);
+    // 소환수 — 크고 밝은 마커 + 펄스
+    syncPointMarkers(entry, "summons", fx?.u || [], 0xd5dde2, 0.95);
+    (entry.summons || []).forEach((marker, index) => {
+      marker.scale.setScalar(0.95 * (1 + Math.sin(performance.now() / 280 + index * 1.7) * 0.08));
+    });
+
     applyFlashShield(actor, entry, fx?.f);
 
     if (fx?.v) {
@@ -750,6 +841,20 @@
       "frog-auto-bubble": { ...actor.weapon, id: "frog-auto-bubble", damage: 2, pellets: 1, range: 334, projectileSpeed: 920, color: 0x83ffad },
     };
     game.spawnProjectile(actor, origin, direction, specialWeapons[message.weaponId] || actor.weapon);
+    // 총구섬광 — 상대 화면에서도 발사 순간이 보인다
+    const flash = markerMesh(0xfff3c4, 0.5, 0.9);
+    flash.position.set(message.x, message.y, 24);
+    const muzzleStrip = stripMesh(0xffe9b0, 0.85);
+    placeStrip(
+      muzzleStrip,
+      { x: message.x, y: message.y },
+      { x: message.x + Math.cos(message.dir) * 22, y: message.y + Math.sin(message.dir) * 22 },
+      5,
+    );
+    window.setTimeout(() => {
+      disposeMarker(flash);
+      disposeStrip(muzzleStrip);
+    }, 100);
   }
 
   function onMessage(message) {
@@ -763,10 +868,16 @@
       applyRemoteFx(message.player.id, message.fx);
     }
     if (message.type === "barrier" && message.playerId === playerId && game?._barrier) {
-      game._barrier.hp = Math.min(game._barrier.hp, message.hp + message.damage);
-      game.absorbBarrierDamage?.(message.damage);
-      game._barrier.hp = message.hp;
-      game.renderUi();
+      // 서버가 확정한 방벽 체력/파괴를 그대로 반영한다.
+      if (message.hp <= 0 && (game._barrier.active || game._barrier.hp > 0)) {
+        game.destroyBarrier?.();
+        game._barrier.hp = 0;
+        game.renderUi();
+      } else if (message.hp > 0) {
+        game._barrier.hp = message.hp;
+        game._barrier.disabledUntil = 0;
+        game.renderUi();
+      }
     }
     if (message.type === "hit") {
       const actor = actors.get(message.targetId);
@@ -805,6 +916,7 @@
   window.__multiplayer = {
     ready,
     actors,
+    remoteFx, // 디버그/테스트: playerId → 원격 효과 상태
     // 방을 아주 떠날 때(결과창 → 로비) 서버에 알려 즉시 정리하게 한다.
     leave() {
       serverEnding = true; // 나가면서 나는 접속 끊김 안내는 띄우지 않는다
