@@ -59,6 +59,15 @@ const guest = socketFor(created.room.id, joined.token);
 const hostWelcome = await host.next((message) => message.type === "welcome");
 await guest.next((message) => message.type === "welcome");
 
+const selectableMaps = [
+  "crossroads", "offset", "open-lanes", "ruined-garden",
+  "frost-fortress", "brush-maze", "sunscar-canyon",
+];
+for (const mapId of selectableMaps) {
+  host.send(JSON.stringify({ type: "action", action: "map", value: mapId }));
+  await guest.next((message) => message.type === "room" && message.room.mapId === mapId);
+}
+
 guest.send(JSON.stringify({ type: "action", action: "character", value: "bulwark" }));
 await host.next((message) => message.type === "room" && message.room.members.find((m) => m.id === joined.playerId)?.characterId === "bulwark");
 guest.send(JSON.stringify({ type: "action", action: "ready", value: true }));

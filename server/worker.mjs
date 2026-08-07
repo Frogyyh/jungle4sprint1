@@ -5,7 +5,10 @@ const ALLOWED_CHARACTERS = new Set([
   "gunslinger", "bulwark", "sentinel", "soldier", "frog",
   "reaper", "hunter", "ninja", "sniper", "demolitionist",
 ]);
-const ALLOWED_MAPS = new Set(["crossroads", "offset", "open-lanes"]);
+const ALLOWED_MAPS = new Set([
+  "crossroads", "offset", "open-lanes", "ruined-garden",
+  "frost-fortress", "brush-maze", "sunscar-canyon",
+]);
 const ALLOWED_PROJECTILES = new Set([
   "dual_pistols", "shield_pistol", "rifle", "frog", "frog-auto-bubble",
   "shotgun", "dagger", "bolt_action",

@@ -5,7 +5,7 @@ const root = resolve(import.meta.dirname, "..");
 const output = resolve(root, "public");
 const files = [
   "index.html", "landing.js", "styles.css", "game.html", "game.js",
-  "operators.js", "operator-system.js", "quality-pass.js", "frog.js",
+  "operators.js", "map-data.js", "operator-system.js", "quality-pass.js", "frog.js",
   "asset-visuals.js", "lobby-bridge.js", "multiplayer-client.js", "ui",
 ];
 const assetFiles = ["logo.png", "processed"];

@@ -73,18 +73,19 @@
 
     const makeMapMesh = (object) => {
       const color = selectedMap.theme[object.type] || selectedMap.theme.wall;
-      const height = object.type === "boundary" ? 20 : object.type === "water" ? 2 : object.type === "bush" ? 5 : 24;
-      const geometry = object.r
-        ? new THREE.CylinderGeometry(object.r, object.r, 8, 12)
-        : new THREE.BoxGeometry(object.w, object.h, height);
+      const width = object.r ? object.r * 2 : object.w;
+      const height = object.r ? object.r * 2 : object.h;
+      // game.js exposes PlaneGeometry to extension scripts. Keeping map pieces
+      // flat also matches the top-down renderer and avoids relying on Three.js
+      // constructors that may be removed by the production bundle tree-shaker.
+      const geometry = new THREE.PlaneGeometry(width, height);
       const material = new THREE.MeshBasicMaterial({
         color,
         transparent: object.type === "bush" || object.type === "water",
         opacity: object.type === "bush" ? 0.72 : object.type === "water" ? 0.78 : 1,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      if (object.r) mesh.rotation.x = Math.PI / 2;
-      mesh.position.set(object.x, object.y, object.type === "water" ? 0 : height / 2 - 7);
+      mesh.position.set(object.x, object.y, object.type === "water" ? 1 : 8);
       mesh.userData.breachlineMapObject = object.type;
       return mesh;
     };
@@ -109,8 +110,8 @@
       }
       if (selectedMap.objective) {
         const objectiveMesh = new THREE.Mesh(
-          new THREE.RingGeometry(34, 46, 32),
-          new THREE.MeshBasicMaterial({ color: selectedMap.theme.accent, transparent: true, opacity: 0.9 })
+          new THREE.PlaneGeometry(92, 92),
+          new THREE.MeshBasicMaterial({ color: selectedMap.theme.accent, transparent: true, opacity: 0.22 })
         );
         objectiveMesh.position.set(selectedMap.objective[0], selectedMap.objective[1], 1.5);
         objectiveMesh.userData.breachlineMapObject = "objective";
