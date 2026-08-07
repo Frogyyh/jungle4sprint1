@@ -997,11 +997,8 @@
         game.showToast("PRIMARY READY");
         return;
       }
-      // 병과별 투척물: 군인=섬광탄, 스나이퍼=연막탄, 폭탄마=수류탄 (모두 2번키)
-      const gadgetByKey = {
-        Digit2: game.activeOperatorId === "sniper" ? "smoke"
-          : game.activeOperatorId === "demolitionist" ? "frag" : "flash",
-      };
+      // 투척물 스킬은 모두 우클릭으로 옮겨졌다(operator-system.js). 2번키 선택은 비활성화한다.
+      const gadgetByKey = {};
       if (["Digit2", "Digit3", "Digit4"].includes(event.code)) {
         event.preventDefault();
         event.stopImmediatePropagation();

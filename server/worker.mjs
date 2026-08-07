@@ -78,6 +78,9 @@ const cleanFx = (fx) => {
   const smokes = numberRows(fx.o, 6, 4);
   const flashShield = numbers(fx.f, 2);
   const railBeam = numbers(fx.l, 3);
+  const heavyLaser = numbers(fx.L, 4); // [시리얼, 방향, 사거리, 반폭]
+  const netFx = numbers(fx.N, 2); // 투망 비행 위치 [x, y]
+  const traps = numberRows(fx.T, 2, 3); // 덫 위치 [[x, y], ...]
   const reveal = numbers(fx.v, 2);
   const launcherLanding = numbers(fx.p, 2); // 유탄 착탄 지점
   if (tongue) cleaned.t = tongue;
@@ -91,6 +94,9 @@ const cleanFx = (fx) => {
   if (smokes) cleaned.o = smokes;
   if (flashShield) cleaned.f = flashShield;
   if (railBeam) cleaned.l = railBeam;
+  if (heavyLaser) cleaned.L = heavyLaser;
+  if (netFx) cleaned.N = netFx;
+  if (traps) cleaned.T = traps;
   if (reveal) cleaned.v = reveal;
   if (launcherLanding) cleaned.p = launcherLanding;
   return Object.keys(cleaned).length ? cleaned : null;
@@ -354,6 +360,7 @@ export class GameRoom extends DurableObject {
 
     if (data.type === "state") return this.handleState(room, member, data, ws);
     if (data.type === "hit") return this.handleHit(room, member, data);
+    if (data.type === "snare") return this.handleSnare(room, member, data);
     if (data.type === "summon-hit") return this.handleSummonHit(room, member, data);
     if (data.type === "shot") return this.handleShot(room, member, data, ws);
     if (data.type === "leave") return this.handleLeave(room, member, ws);
@@ -576,6 +583,20 @@ export class GameRoom extends DurableObject {
       sourceX: attacker.x, sourceY: attacker.y,
     });
     if (room.status === "finished") this.broadcast(room, { type: "finish", winner: room.winner, room: this.publicRoom(room) });
+  }
+
+  /* 스나이퍼 투망(둔화)·덫(포박) — 대상 이동 제어를 상대 화면에 전파한다.
+     피해가 없으므로 hit 과 분리해 처리한다. */
+  handleSnare(room, sender, data) {
+    const attacker = this.subjectOf(room, sender, data);
+    if (!attacker || room.status !== "playing" || !attacker.alive) return;
+    const target = room.members.find((m) => m.id === data.targetId);
+    if (!target?.alive || target.team === attacker.team) return;
+    const dx = attacker.x - target.x; const dy = attacker.y - target.y;
+    if (dx * dx + dy * dy > 1600 * 1600) return;
+    const mult = Math.max(0, Math.min(1, Number(data.mult)));
+    const ms = Math.max(200, Math.min(3000, Number(data.ms) || 1000));
+    this.broadcast(room, { type: "snare", targetId: target.id, mult, ms });
   }
 
   /* 유예 시간이 지난 뒤에도 사람이 없으면 방을 지운다. */

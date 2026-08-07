@@ -291,9 +291,19 @@
 
     const originalMoveActor = game.moveActor.bind(game);
     game.moveActor = function networkSlow(actor, delta) {
-      const movement = actor === this.player && performance.now() < (this._networkSlowUntil || 0)
-        ? delta.clone().multiplyScalar(0.7) : delta;
+      const slowed = actor === this.player && performance.now() < (this._networkSlowUntil || 0);
+      const movement = slowed ? delta.clone().multiplyScalar(this._networkSlowMult ?? 0.7) : delta;
       originalMoveActor(actor, movement);
+    };
+
+    /* 투망 둔화·덫 포박을 상대(사람)에게 전파한다. operator-system.js 의
+       applyControlEffect 가 이 훅을 호출한다(있을 때만). */
+    game._onControlEffect = (target, factor, seconds) => {
+      if (!active || game.phase !== "playing") return;
+      const targetId = networkIdOf(target);
+      if (targetId && targetId !== playerId && target.team !== game.player.team) {
+        send({ type: "snare", targetId, mult: factor, ms: Math.round(seconds * 1000) });
+      }
     };
 
     const originalStep = game.step.bind(game);
@@ -445,6 +455,16 @@
     }
     if (game._revealUntil > game.now) {
       fx.v = [Number((game._revealUntil - game.now).toFixed(2)), game._revealRange || B.operators.sentinel.reveal.range];
+    }
+    // 스나이퍼 투망 비행 위치 — [x, y]
+    if (game._net) fx.N = [Math.round(game._net.pos.x), Math.round(game._net.pos.y)];
+    // 스나이퍼 덫 위치 — 아군·적군 모두에게 보인다. [[x, y], ...]
+    if (game._traps?.length) fx.T = game._traps.slice(0, 3).map((trap) => [Math.round(trap.pos.x), Math.round(trap.pos.y)]);
+    // RB-08 헤비 레이저 발사 — [발사 시리얼, 방향, 사거리, 반폭]
+    if (game.activeOperatorId === "sentinel" && (game._heavyLaserShots || 0) > 0) {
+      const halfWidth = (game.camera.right - game.camera.left) / 2;
+      const halfHeight = (game.camera.top - game.camera.bottom) / 2;
+      fx.L = [game._heavyLaserShots, Number(game.player.dir.toFixed(2)), Math.round(Math.hypot(halfWidth, halfHeight)), B.operators.sentinel.heavyLaser.halfWidth];
     }
     return Object.keys(fx).length ? fx : null;
   }
@@ -677,6 +697,29 @@
     }
   };
 
+  // RB-08 헤비 레이저 — 넓은 보라색 관통 빔(시야에 걸친 조각만 보이도록 분할)
+  const showRemoteHeavyBeam = (actor, direction, range, halfWidth = B.operators.sentinel.heavyLaser.halfWidth) => {
+    const segmentLength = 60;
+    const startDistance = actor.radius + 10;
+    const segmentCount = Math.ceil(Math.max(0, range - startDistance) / segmentLength);
+    for (let segment = 0; segment < segmentCount; segment++) {
+      const fromDistance = startDistance + segment * segmentLength;
+      const toDistance = Math.min(range, fromDistance + segmentLength + 1);
+      for (const [beamColor, width, opacity] of [[0xb26cff, halfWidth * 2, 0.4], [0xe6c6ff, halfWidth, 0.6], [0xffffff, 6, 0.9]]) {
+        const strip = stripMesh(beamColor, opacity);
+        strip.userData.remoteFxOwner = actor;
+        placeStrip(strip, {
+          x: actor.pos.x + Math.cos(direction) * fromDistance,
+          y: actor.pos.y + Math.sin(direction) * fromDistance,
+        }, {
+          x: actor.pos.x + Math.cos(direction) * toDistance,
+          y: actor.pos.y + Math.sin(direction) * toDistance,
+        }, width);
+        window.setTimeout(() => disposeStrip(strip), 300);
+      }
+    }
+  };
+
   const syncGunKata = (actor, entry, dash) => {
     const active = dash?.[0] === 0 && actor.alive;
     if (!active) {
@@ -827,7 +870,7 @@
         ...(entry.revealRings || []),
         ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
       ]) disposeStrip(strip);
-      for (const marker of [entry.dash, entry.reveal, entry.landing, entry.gunKataPulse, ...(entry.summons || [])]) {
+      for (const marker of [entry.dash, entry.reveal, entry.landing, entry.gunKataPulse, entry.net, ...(entry.summons || []), ...(entry.traps || [])]) {
         disposeMarker(marker);
       }
       const actor = actors.get(id);
@@ -950,6 +993,17 @@ function syncRemoteFxVisibility() {
     ]) setRemoteEffectVisible(actor, effect);
     // Reaper summons are deliberate global information and ignore fog of war.
     for (const summon of entry.summons || []) setRemoteEffectVisible(actor, summon, true);
+    // 스나이퍼 덫(빨간 지뢰) — 아군·적군 모두에게 보인다(안개 무시).
+    // 아군/소유자: 반투명 식별 · 적(게스트): 빨간 깜빡임.
+    const trapAlly = actor.team === game.player.team;
+    const blink = 0.3 + Math.abs(Math.sin(performance.now() / 170)) * 0.65;
+    for (const trap of entry.traps || []) {
+      setRemoteEffectVisible(actor, trap, true);
+      trap.material.color.setHex(B.operators.sniper.trap.color);
+      trap.material.transparent = true;
+      trap.material.opacity = trapAlly ? 0.4 : blink;
+      trap.scale.setScalar(trapAlly ? 1.1 : 1.1 + Math.abs(Math.sin(performance.now() / 170)) * 0.25);
+    }
     for (const grenade of entry.grenades?.values?.() || []) {
       const visible = isEffectVisibleAt(actor, grenade.mesh.position);
       setFxVisible(grenade.mesh, visible);
@@ -1018,6 +1072,22 @@ function syncRemoteFxVisibility() {
       showRemoteBurst(actor, fx.l[1], 0x55f0b0, fx.l[2]);
     }
 
+    if (fx?.L && entry.heavyLaserSerial !== fx.L[0]) {
+      entry.heavyLaserSerial = fx.L[0];
+      showRemoteHeavyBeam(actor, fx.L[1], fx.L[2], fx.L[3]);
+    }
+
+    // 스나이퍼 투망 — 회전하는 파란 그물 마커
+    if (fx?.N) {
+      entry.net ||= markerMesh(B.operators.sniper.net.color, 0.95, 0.9);
+      entry.net.userData.remoteFxOwner = actor;
+      entry.net.position.set(fx.N[0], fx.N[1], 22);
+      entry.net.rotation.z += 0.3;
+    } else if (entry.net) {
+      disposeMarker(entry.net);
+      entry.net = null;
+    }
+
     if (fx?.s) {
       entry.scythe ||= createRemoteScythe(actor);
       entry.scythe.position.set(fx.s[0], fx.s[1], 22);
@@ -1026,6 +1096,9 @@ function syncRemoteFxVisibility() {
       disposeRemoteScythe(actor, entry.scythe);
       entry.scythe = null;
     }
+
+    // 스나이퍼 덫 — 아군·적군 모두에게 보이는 마커
+    syncPointMarkers(entry, "traps", fx?.T || [], B.operators.sniper.trap.color, 1.1, 0, 1);
 
     // 소환수 — 크고 밝은 마커 + 펄스
     syncPointMarkers(entry, "summons", fx?.u || [], 0xd5dde2, 0.95, 1, 2);
@@ -1104,9 +1177,15 @@ function syncRemoteFxVisibility() {
       if (message.targetId === playerId && game) {
         game.showDamageDirection?.({ x: message.sourceX, y: message.sourceY });
         game.player.hp = message.hp; game.player.alive = message.alive;
-        if (message.slowed) game._networkSlowUntil = performance.now() + 1000;
+        if (message.slowed) { game._networkSlowUntil = performance.now() + 1000; game._networkSlowMult = 0.7; }
         game.renderUi();
       }
+    }
+    if (message.type === "snare" && message.targetId === playerId && game) {
+      // 상대의 투망/덫에 걸렸다 — 이동 둔화(또는 포박)를 로컬에 반영한다.
+      game._networkSlowUntil = performance.now() + (message.ms || 1000);
+      game._networkSlowMult = Number.isFinite(message.mult) ? message.mult : 0.5;
+      game.renderUi?.();
     }
     if (message.type === "summon-hit" && message.ownerId === playerId) {
       game.damageSummon?.(message.summonId, message.damage);

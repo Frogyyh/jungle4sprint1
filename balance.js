@@ -45,8 +45,10 @@
     operators: {
       gunslinger: {
         weapon: { id: "dual_pistols", name: "DUAL PISTOLS", damage: 15, pellets: 1, rpm: 800, spreadDeg: 4, magSize: 30, reserve: 9999, reload: 2.5, range: 720, projectileSpeed: 1450, color: 0xffd166 },
-        gunKata: { damage: 50, radius: 176, cooldown: 5 }, // 반경 = 근접 기본 사거리(88) × 2
+        gunKata: { damage: 50, radius: 176, cooldown: 5 }, // 반경 = 근접 기본 사거리(88) × 2 · SPACE 건카타 돌진(쿨타임 5초·무제한)
         dash: { speed: 760, duration: 0.5 },
+        // 우클릭 난사: 부채꼴 범위를 쌍권총으로 난사한다 (부채꼴 좌우 halfAngleDeg, duration 동안 shots발)
+        spray: { damage: 12, shots: 16, halfAngleDeg: 32, duration: 0.55, cooldown: 8, projectileSpeed: 1450 },
       },
       bulwark: {
         weapon: { id: "shield_pistol", name: "SHIELD & PISTOL", damage: 10, pellets: 1, rpm: 375, spreadDeg: 5, magSize: 20, reserve: 9999, reload: 2.5, range: 540, projectileSpeed: 950, color: 0x7ea8ff },
@@ -57,9 +59,16 @@
         weapon: { id: "railgun", name: "RAILGUN", damage: 40, pellets: 1, rpm: 45, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 580, projectileSpeed: 1, color: 0x55f0b0 },
         railgun: { chargeTime: 1 },
         reveal: { range: 920, duration: 7, cooldown: 15 },
+        // 우클릭 헤비 레이저: 레일건 충전(1초)의 3배(3초)를 들여 넓은 보라색 관통 레이저를 발사한다.
+        // 피해는 40 — 멀티플레이 서버의 sentinel 피해 상한과 동일하게 맞춘다.
+        heavyLaser: { chargeTime: 3, damage: 40, halfWidth: 46, cooldown: 10, color: 0xb26cff },
       },
       soldier: {
         weapon: { id: "rifle", name: "ASSAULT RIFLE", damage: 20, pellets: 1, rpm: 420, spreadDeg: 4.5, magSize: 30, reserve: 9999, reload: 2.5, range: 1040, projectileSpeed: 1500, color: 0x6de6df },
+        // 우클릭 섬광탄: 개수 무제한, 쿨타임 5초.
+        flashCooldown: 5,
+        // SPACE 신체강화: 5초간 이동속도·피해 부스트. 쿨타임 20초.
+        enhance: { duration: 5, speedMult: 1.4, damageMult: 1.5, cooldown: 20 },
       },
       frog: {
         weapon: { id: "frog", name: "FROG BUBBLE SPRAYER", damage: 4, pellets: 5, rpm: 300, spreadDeg: 12, magSize: 999, reserve: 9999, reload: 2.5, range: 900, projectileSpeed: 1200, color: 0x7eeeff },
@@ -83,6 +92,8 @@
       hunter: {
         weapon: { id: "shotgun", name: "DOUBLE BARREL", damage: 24, pellets: 5, rpm: 150, spreadDeg: 18, magSize: 2, reserve: 9999, reload: 2.5, range: 470, projectileSpeed: 1120, color: 0xffab63 },
         dash: { speed: 900, duration: 0.34, cooldown: 3, invulnerable: true }, // 공격 무시 + 즉시 재장전
+        // 우클릭 피냄새: 일정 거리 내 적 위치를 감지한다 (벽 관통·나만 보임·적에겐 안 보임)
+        bloodScent: { range: 720, duration: 5, cooldown: 12 },
       },
       ninja: {
         weapon: { id: "katana", name: "KATANA / DAGGERS", damage: 40, pellets: 1, rpm: 105, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 118, projectileSpeed: 1, color: 0xff5f6d },
@@ -93,9 +104,18 @@
       },
       sniper: {
         weapon: { id: "bolt_action", name: "BOLT-ACTION RIFLE", damage: 80, pellets: 1, rpm: 67, spreadDeg: 1, magSize: 1, reserve: 9999, reload: 0.9, range: 1420, projectileSpeed: 2200, color: 0x9ef0ff },
+        // 우클릭 투망: 처음 적중한 적을 1초간 50% 둔화시키고 스나이퍼는 뒤로 밀려난다.
+        net: { range: 620, slowMult: 0.5, slowDuration: 1, knockback: 220, speed: 1150, cooldown: 8, color: 0xbfe9ff },
+        // SPACE 로 설치 모드 진입 → 범위(placeRange) 안을 우클릭해 덫을 설치한다.
+        // 게임 시작 시 3개. 상대가 밟으면 1초 포박. 덫은 아군·적군 모두에게 보인다(빨간 지뢰).
+        trap: { count: 3, rootDuration: 1, radius: 150, armDelay: 0.4, placeRange: 200, color: 0xff3b3b },
       },
       demolitionist: {
         weapon: { id: "grenade_launcher", name: "6-SHOT GRENADE LAUNCHER", damage: 40, pellets: 1, rpm: 90, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 780, projectileSpeed: 620, color: 0xffa8f0 },
+        // 우클릭 수류탄: 개수 제한 없음, 쿨타임 3초.
+        fragCooldown: 3,
+        // SPACE 직선 폭격: 조준 방향으로 폭발을 일직선으로 연속 투하한다.
+        barrage: { steps: 6, spacing: 95, radius: 67, damage: 40, interval: 0.1, cooldown: 12 },
       },
     },
   };

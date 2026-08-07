@@ -275,3 +275,69 @@
   .scoreboard{grid-template-columns:1fr}
   .result-actions .ghost-button{padding:11px 13px;font-size:10px;letter-spacing:.1em}
 }
+
+/* ---------- 상단 중앙: 타임 + 좌우 팀 남은 인원 ---------- */
+.round-center{
+  position:absolute;left:50%;top:22px;transform:translateX(-50%);
+  display:flex;align-items:center;gap:16px;
+  padding:7px 16px;border:1px solid rgba(255,255,255,.1);
+  background:rgba(5,14,20,.72);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+}
+.round-center .round-timer{
+  color:var(--cyan);font-weight:900;font-size:22px;letter-spacing:.06em;
+  font-variant-numeric:tabular-nums;text-shadow:0 2px 12px rgba(0,0,0,.6);min-width:74px;text-align:center;
+}
+.team-count{display:flex;align-items:center;gap:7px}
+.team-count b{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.team-count .team-pip{width:11px;height:11px;border-radius:50%;box-shadow:0 0 10px currentColor}
+.team-count.ally{color:var(--cyan)}
+.team-count.ally .team-pip{background:var(--cyan)}
+.team-count.enemy{color:var(--red)}
+.team-count.enemy .team-pip{background:var(--red)}
+@media(max-width:620px){
+  .round-center{top:14px;gap:10px;padding:5px 11px}
+  .round-center .round-timer{font-size:17px;min-width:58px}
+  .team-count b{font-size:16px}
+  .team-count .team-pip{width:9px;height:9px}
+}
+
+/* ---------- 하단: 탄창수 + 스킬 슬롯을 화면 정중앙에 배치 ---------- */
+.hud-bottom .weapon-block{
+  position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+  min-width:0;text-align:center;
+}
+.skill-slots{display:flex;justify-content:center;gap:10px;margin-top:11px}
+.skill-slot{
+  position:relative;width:52px;height:52px;overflow:hidden;
+  border:1px solid rgba(255,255,255,.18);background:rgba(8,18,25,.72);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  transition:border-color .15s ease,opacity .15s ease;
+}
+.skill-slot.ready{border-color:rgba(109,230,223,.7);box-shadow:0 0 14px rgba(109,230,223,.18)}
+.skill-slot.empty{opacity:.35}
+/* 쿨타임 회색 오버레이: 아래에서부터 차 있고, 준비될수록 높이가 줄며 내려간다 */
+.skill-slot .skill-cd-fill{
+  position:absolute;left:0;right:0;bottom:0;height:0;
+  background:rgba(150,164,172,.55);
+  border-top:1px solid rgba(210,222,228,.6);
+  pointer-events:none;transition:height .12s linear;
+}
+.skill-slot .skill-key{
+  position:relative;z-index:1;
+  color:#9fb2ba;font:800 8px/1 ui-monospace,Consolas,monospace;letter-spacing:.08em;
+}
+.skill-slot.ready .skill-key{color:var(--cyan)}
+.skill-slot .skill-cd-text{
+  position:relative;z-index:1;margin-top:3px;min-height:15px;
+  color:#f3f9fa;font:900 15px/1 ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums;
+  text-shadow:0 1px 4px rgba(0,0,0,.8);
+}
+.skill-slot .skill-count{
+  position:absolute;z-index:2;right:3px;top:2px;
+  color:var(--orange);font:900 11px/1 ui-monospace,Consolas,monospace;
+}
+@media(max-width:620px){
+  .skill-slots{gap:7px;margin-top:8px}
+  .skill-slot{width:44px;height:44px}
+  .skill-slot .skill-cd-text{font-size:13px}
+}
