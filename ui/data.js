@@ -35,91 +35,57 @@ export function characterPortrait(character, size = 120) {
 </svg>`.trim();
 }
 
-/* ---------------- 맵 3종 ---------------- */
+/* ---------------- 맵 7종 ----------------
+   로비와 게임은 루트 map-data.js의 동일 좌표/크기를 사용한다. */
 
-/* 좌표는 게임 index.html 의 layouts 배열 원본. 월드 범위는 대략 ±900 × ±600. */
-const LAYOUT_POINTS = {
-  crossroads: [
-    [-125, 125], [125, 125], [-125, -125], [125, -125],
-    [0, 500], [0, -500],
-    [-500, 380], [-315, 290], [500, 380], [315, 290],
-    [-500, -380], [-315, -290], [500, -380], [315, -290],
-    [-675, 135], [-675, -135], [675, 135], [675, -135],
-    [-775, 525], [775, 525], [-775, -525], [775, -525],
-  ],
-  offset: [
-    [-145, 135], [145, 105], [-145, -105], [145, -135],
-    [80, 515], [-80, -515],
-    [-535, 345], [-325, 435], [535, 405], [325, 285],
-    [-535, -405], [-325, -285], [535, -345], [325, -435],
-    [-700, 160], [-620, -145], [620, 145], [700, -160],
-    [-650, 550], [805, 500], [-805, -500], [650, -550],
-  ],
-  "open-lanes": [
-    [-165, 145], [165, 145], [-165, -145], [165, -145],
-    [0, 535], [0, -535],
-    [-445, 425], [-305, 230], [445, 425], [305, 230],
-    [-445, -425], [-305, -230], [445, -425], [305, -230],
-    [-735, 155], [-735, -155], [735, 155], [735, -155],
-    [-760, 470], [760, 470], [-760, -470], [760, -470],
-  ],
-};
+const MAP_DATA = window.BREACHLINE_MAP_DATA;
+if (!MAP_DATA) throw new Error("map-data.js must load before ui/data.js");
 
-export const MAPS = [
-  {
-    id: "crossroads",
-    name: "CROSSROADS",
-    subtitle: "대칭 · 중앙 교차로",
-    desc: "완전 대칭 구조. 중앙 사각 엄폐물 네 개를 먼저 잡는 팀이 각을 만든다. 정직한 교전이 많아 조합 차이가 그대로 드러난다.",
-  },
-  {
-    id: "offset",
-    name: "OFFSET",
-    subtitle: "비대칭 · 어긋난 라인",
-    desc: "엄폐물이 좌우로 어긋나 있어 같은 위치라도 보이는 각이 다르다. 한쪽 롱 라인이 길어 저격·관통 캐릭터가 유리하다.",
-  },
-  {
-    id: "open-lanes",
-    name: "OPEN LANES",
-    subtitle: "개방 · 넓은 시야",
-    desc: "엄폐물이 바깥으로 밀려나 중앙이 넓게 뚫려 있다. 은폐물이 적어 연막과 섬광 없이는 중앙을 건널 수 없다.",
-  },
-];
+export const MAPS = MAP_DATA.maps;
 
 export function findMap(id) {
   return MAPS.find((m) => m.id === id) || MAPS[0];
 }
 
-/** 실제 엄폐물 좌표로 그리는 미니맵(개략도). 스폰은 좌·우 끝. */
+/** 실제 월드 오브젝트 좌표와 크기를 그대로 축소한 SVG 미니맵. */
 export function mapPreview(map, width = 460) {
-  const points = LAYOUT_POINTS[map.id] || [];
-  const W = 1900;
-  const H = 1300;
-  const cover = 96;
-  const blocks = points
-    .map(
-      ([x, y]) =>
-        `<rect x="${(x + W / 2 - cover / 2).toFixed(0)}" y="${(H / 2 - y - cover / 2).toFixed(
-          0
-        )}" width="${cover}" height="${cover}" rx="6" fill="#12242e" stroke="#33525e" stroke-width="4" />`
-    )
-    .join("");
+  const W = MAP_DATA.world.width;
+  const H = MAP_DATA.world.height;
+  const colors = map.theme;
+  const fills = {
+    boundary: colors.wall, wall: colors.wall, cover: colors.cover,
+    crate: colors.crate, water: colors.water, bush: colors.bush, decor: colors.bush,
+  };
+  const blocks = map.objects.map((object) => {
+    if (object.r) {
+      return `<circle cx="${object.x + W / 2}" cy="${H / 2 - object.y}" r="${object.r}" fill="${fills[object.type]}" />`;
+    }
+    const opacity = object.type === "bush" ? 0.78 : 1;
+    const dash = object.type === "bush" ? ' stroke-dasharray="18 10"' : "";
+    return `<rect x="${object.x + W / 2 - object.w / 2}" y="${H / 2 - object.y - object.h / 2}"
+      width="${object.w}" height="${object.h}" rx="10" fill="${fills[object.type]}" opacity="${opacity}"
+      stroke="${object.type === "water" ? "#79d9f5" : "#111827"}" stroke-width="5"${dash} />`;
+  }).join("");
+  const spawn = (position, color, label) => `<g>
+    <circle cx="${position[0] + W / 2}" cy="${H / 2 - position[1]}" r="58" fill="${color}" opacity=".28" />
+    <text x="${position[0] + W / 2}" y="${H / 2 - position[1] + 20}" fill="${color}" font-size="58"
+      font-weight="900" text-anchor="middle">${label}</text></g>`;
+  const objective = map.objective
+    ? `<circle cx="${map.objective[0] + W / 2}" cy="${H / 2 - map.objective[1]}" r="48"
+        fill="none" stroke="${colors.accent}" stroke-width="14" />`
+    : "";
 
   return `
 <svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${width}px" role="img"
      aria-label="${map.name} 맵 개략도">
-  <rect width="${W}" height="${H}" fill="#060f16" />
-  <g stroke="#0f2029" stroke-width="2">
+  <rect width="${W}" height="${H}" fill="${colors.floor}" />
+  <g stroke="#ffffff" stroke-opacity=".045" stroke-width="3">
     ${Array.from({ length: 9 }, (_, i) => `<line x1="${(i + 1) * (W / 10)}" y1="0" x2="${(i + 1) * (W / 10)}" y2="${H}" />`).join("")}
     ${Array.from({ length: 6 }, (_, i) => `<line x1="0" y1="${(i + 1) * (H / 7)}" x2="${W}" y2="${(i + 1) * (H / 7)}" />`).join("")}
   </g>
-  <rect x="40" y="${H / 2 - 190}" width="150" height="380" rx="10" fill="#6de6df" opacity=".12" />
-  <rect x="${W - 190}" y="${H / 2 - 190}" width="150" height="380" rx="10" fill="#ffab63" opacity=".12" />
-  <text x="115" y="${H / 2 + 12}" fill="#6de6df" font-size="52" font-weight="900"
-        text-anchor="middle" letter-spacing="4">A</text>
-  <text x="${W - 115}" y="${H / 2 + 12}" fill="#ffab63" font-size="52" font-weight="900"
-        text-anchor="middle" letter-spacing="4">B</text>
   ${blocks}
-  <rect x="4" y="4" width="${W - 8}" height="${H - 8}" fill="none" stroke="#22404c" stroke-width="8" />
+  ${spawn(MAP_DATA.spawns.player, "#6de6df", "A")}
+  ${spawn(MAP_DATA.spawns.enemy, "#ff7a74", "B")}
+  ${objective}
 </svg>`.trim();
 }
