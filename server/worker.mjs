@@ -63,17 +63,18 @@ const cleanFx = (fx) => {
   if (!fx || typeof fx !== "object") return null;
   const cleaned = {};
   const tongue = numbers(fx.t, 2);
-  const melee = numbers(fx.m, 5);
-  const dash = numbers(fx.d, 3);
+  const melee = numbers(fx.m, 5); // [방향, 사거리, 색, 측면, 진행률]
+  const dash = numbers(fx.d, 2);
   const barrier = numbers(fx.b, 1);
   const railCharge = numbers(fx.r, 1);
   const scythe = numbers(fx.s, 4);
   const summons = numberRows(fx.u, 2, 3);
-  const grenades = numberRows(fx.g, 6, 8);
+  const grenades = numberRows(fx.g, 6, 8); // [id, 종류, x, y, 남은 신관, 전체 신관]
   const smokes = numberRows(fx.o, 6, 4);
   const flashShield = numbers(fx.f, 2);
   const railBeam = numbers(fx.l, 3);
   const reveal = numbers(fx.v, 1);
+  const launcherLanding = numbers(fx.p, 2); // 유탄 착탄 지점
   if (tongue) cleaned.t = tongue;
   if (melee) cleaned.m = melee;
   if (dash) cleaned.d = dash;
@@ -86,6 +87,7 @@ const cleanFx = (fx) => {
   if (flashShield) cleaned.f = flashShield;
   if (railBeam) cleaned.l = railBeam;
   if (reveal) cleaned.v = reveal;
+  if (launcherLanding) cleaned.p = launcherLanding;
   return Object.keys(cleaned).length ? cleaned : null;
 };
 
@@ -489,7 +491,13 @@ export class GameRoom extends DurableObject {
     const dx = attacker.x - target.x; const dy = attacker.y - target.y;
     if (dx * dx + dy * dy > 1600 * 1600) return;
     const now = Date.now();
-    if (attacker.lastHitAt && now - attacker.lastHitAt < 35) return;
+    // 같은 순간에 몰려오는 여러 히트(샷건 펠릿, 근접 다중 타격)는 버스트로 묶어 허용한다.
+    if (attacker.lastHitAt && now - attacker.lastHitAt < 35) {
+      attacker.hitBurst = (attacker.hitBurst || 0) + 1;
+      if (attacker.hitBurst > 8) return;
+    } else {
+      attacker.hitBurst = 0;
+    }
     attacker.lastHitAt = now;
     const maxDamage = DAMAGE_LIMITS[attacker.characterId] || 40;
     const damage = Math.max(1, Math.min(maxDamage, Number(data.damage) || 1));

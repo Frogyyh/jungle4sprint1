@@ -1855,7 +1855,8 @@
       if (game._summons.length) {
         const engaged = [];
         for (const bot of this.bots) {
-          if (!bot.alive || bot.team === "player" || bot.flashedUntil > this.now) continue;
+          // 원격 플레이어 액터(_remote)는 서버 동기화 대상 — 로컬 교전 AI 제외
+          if (!bot.alive || bot._remote || bot.team === "player" || bot.flashedUntil > this.now) continue;
           const summon = nearestSummonThreat(bot);
           if (!summon) continue;
           engaged.push(bot);
@@ -1921,12 +1922,7 @@
       for (let index = this.projectiles.length - 1; index >= 0; index--) {
         const projectile = this.projectiles[index];
         if (!projectile?._prevPos) continue;
-        // 아이언 방벽: 적 투사체가 방벽을 지나면 흡수
-        if (projectile.source?.team === "enemy" && barrierBlocks(projectile._prevPos, projectile.pos)) {
-          absorbBarrierDamage(projectile.damage);
-          this.removeProjectile(index);
-          continue;
-        }
+        // 방벽 흡수는 서버가 확정한다(멀티플레이) — 여기서는 하지 않는다.
         for (const target of [this.player, ...this.bots]) {
           if (target === projectile.source || !target.alive) continue;
           if (!segmentCircleHit(projectile._prevPos, projectile.pos, target.pos, target.radius + PROJECTILE_HIT_BUFFER)) continue;
@@ -2182,6 +2178,7 @@
     };
     game._barrierVisual = barrierVisual; // 디버그/테스트용 노출
     game.absorbBarrierDamage = absorbBarrierDamage; // 디버그/테스트용 노출
+    game.destroyBarrier = destroyBarrier; // 멀티플레이 서버 확정 파괴 처리용
 
     const syncFlashHalos = () => {
       // 시야(부채꼴/원형) 안에 들어온 적에 한해서만 링을 표시한다. (자기 자신 제외)

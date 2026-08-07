@@ -74,6 +74,7 @@ const skillFx = {
   s: [-280, 30, 1, 1.25], u: [[-360, 30], [-350, 55], [-340, 80]],
   g: [[101, 0, -300, 20, 0.8, 1.5], [102, 3, -260, 25, 0, 0]],
   o: [[201, -240, 25, 225, 1, 4.5]], f: [1.25, 0.25], l: [3, 0.25, 1300], v: [6.5],
+  p: [-250, 25],
 };
 host.send(JSON.stringify({ type: "state", x: -400, y: 25, dir: 0.25, fx: skillFx }));
 const state = await guest.next((message) => message.type === "state" && message.player.id === created.playerId);
