@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07111c" />
+    <title>Visual Shooting Code — 시작</title>
+    <link rel="icon" href="../Asset/logo.png" />
+    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="landing.css" />
+  </head>
+  <body>
+    <main class="screen-card start-card">
+      <div class="eyebrow">Visual Shooting Code</div>
+      <h1><img class="title-logo" src="../Asset/logo.png" alt="" />vs<span>code</span></h1>
+      <p class="subtitle">2 vs 2 tactical shooter</p>
+
+      <div class="divider"></div>
+
+      <form id="nickname-form" novalidate>
+        <div class="nickname-row">
+          <input
+            id="nickname"
+            class="field"
+            type="text"
+            placeholder="닉네임을 입력하세요"
+            maxlength="12"
+            autocomplete="off"
+            autofocus
+            aria-label="닉네임"
+          />
+          <button id="select-button" class="primary-button" type="submit">
+            선택 <span>↗</span>
+          </button>
+        </div>
+        <p id="nickname-error" class="field-error" role="alert"></p>
+      </form>
+
+      <p class="hint">닉네임은 2~12자 · 한글 · 영문 · 숫자 · 밑줄(_)</p>
+      <div class="divider"></div>
+      <div class="seed-line">LOCAL SIMULATION · 10 OPERATORS · 2 vs 2</div>
+    </main>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <script type="module" src="./landing-page.js"></script>
+  </body>
+</html>

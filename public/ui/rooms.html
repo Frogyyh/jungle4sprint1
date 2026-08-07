@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07111c" />
+    <title>Visual Shooting Code — 방 찾기</title>
+    <link rel="icon" href="../Asset/logo.png" />
+    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="rooms.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <!-- 왼쪽: 내 정보 + 하단 방 만들기 -->
+      <aside class="sidebar">
+        <div class="brand">
+          <img class="brand-logo" src="../Asset/logo.png" alt="" /><span
+            >Visual Shooting Code</span
+          ><small>LOBBY</small>
+        </div>
+
+        <div class="me">
+          <div class="label">MY CALLSIGN</div>
+          <div class="name" id="my-nickname">—</div>
+          <button id="change-nickname" class="ghost-button" type="button">닉네임 변경</button>
+        </div>
+
+        <div class="controls-panel">
+          <div class="label">CONTROLS</div>
+          <ul id="controls-list"></ul>
+        </div>
+
+        <div class="sidebar-bottom">
+          <button id="create-room" class="primary-button" type="button">
+            방 만들기 <span>+</span>
+          </button>
+        </div>
+      </aside>
+
+      <!-- 오른쪽: 방 목록 -->
+      <main class="content">
+        <div class="content-head">
+          <div>
+            <div class="eyebrow">FIND A MATCH</div>
+            <h2>방 찾기</h2>
+          </div>
+          <div class="head-actions">
+            <div class="room-count"><b id="room-count">0</b> ROOMS</div>
+            <button id="refresh" class="ghost-button" type="button">새로고침</button>
+          </div>
+        </div>
+
+        <div class="list-head">
+          <span>방 제목</span><span>방장</span><span>참여 / 정원</span>
+        </div>
+
+        <div class="room-list" id="room-list"></div>
+      </main>
+    </div>
+
+    <!-- 방 만들기 모달 -->
+    <div id="create-modal" class="modal-backdrop hidden">
+      <section class="screen-card modal">
+        <div class="eyebrow">NEW ROOM</div>
+        <h2>방 만들기</h2>
+        <form id="create-form" novalidate>
+          <div class="form-row">
+            <label for="room-title">방 제목</label>
+            <input
+              id="room-title"
+              class="field"
+              type="text"
+              maxlength="20"
+              placeholder="예) 2대2 한판 하실분"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-row">
+            <label for="room-password">비밀번호 <span class="optional">(숫자 4자리 · 비워두면 공개방)</span></label>
+            <input
+              id="room-password"
+              class="field pin"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="4"
+              placeholder="0000"
+              autocomplete="off"
+            />
+          </div>
+          <div class="form-row">
+            <label for="room-capacity">정원</label>
+            <div class="segmented" id="room-capacity">
+              <button type="button" data-capacity="2">2 인</button>
+              <button type="button" data-capacity="4" class="selected">4 인</button>
+            </div>
+          </div>
+          <p id="create-error" class="field-error" role="alert"></p>
+          <div class="modal-actions">
+            <button id="create-cancel" class="ghost-button" type="button">취소</button>
+            <button class="primary-button" type="submit">만들기 <span>↗</span></button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <!-- 잠긴 방 참여 시 비밀번호 입력 -->
+    <div id="pw-modal" class="modal-backdrop hidden">
+      <section class="screen-card modal">
+        <div class="eyebrow">LOCKED ROOM</div>
+        <h2 id="pw-room-title">비밀번호 입력</h2>
+        <form id="pw-form" novalidate>
+          <div class="form-row">
+            <label for="pw-input">비밀번호 (숫자 4자리)</label>
+            <input
+              id="pw-input"
+              class="field pin"
+              type="text"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength="4"
+              placeholder="0000"
+              autocomplete="off"
+            />
+          </div>
+          <p id="pw-error" class="field-error" role="alert"></p>
+          <div class="modal-actions">
+            <button id="pw-cancel" class="ghost-button" type="button">취소</button>
+            <button class="primary-button" type="submit">참여 <span>↗</span></button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <script type="module" src="./rooms-page.js"></script>
+  </body>
+</html>

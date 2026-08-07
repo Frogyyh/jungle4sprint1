@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07111c" />
+    <title>Visual Shooting Code — 방</title>
+    <link rel="icon" href="../Asset/logo.png" />
+    <link rel="stylesheet" href="ui.css" />
+    <link rel="stylesheet" href="room.css" />
+  </head>
+  <body>
+    <div class="room-layout">
+      <!-- 상단 -->
+      <header class="room-head">
+        <div>
+          <div class="eyebrow">ROOM // BRIEFING</div>
+          <h2 id="room-title">—</h2>
+          <div class="room-meta">
+            방장 <b id="room-host">—</b> · <b id="room-count">0/0</b> · 내 닉네임
+            <b id="my-name">—</b><span id="room-pw" class="room-pw hidden"></span>
+          </div>
+        </div>
+        <button id="leave" class="ghost-button" type="button">방 나가기</button>
+      </header>
+
+      <!-- 본문 -->
+      <div class="room-body">
+        <!-- 왼쪽: 참여자 -->
+        <section class="col">
+          <div class="col-label">PLAYERS</div>
+          <div class="teams">
+            <div class="team team-a">
+              <div class="team-head">
+                <span class="team-name">A TEAM</span>
+                <button class="team-join" type="button" data-team="A">이 팀으로</button>
+              </div>
+              <div class="slots" id="slots-a"></div>
+            </div>
+            <div class="team team-b">
+              <div class="team-head">
+                <span class="team-name">B TEAM</span>
+                <button class="team-join" type="button" data-team="B">이 팀으로</button>
+              </div>
+              <div class="slots" id="slots-b"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 오른쪽: 맵 -->
+        <section class="col">
+          <div class="col-label">MAP</div>
+          <div class="map-panel">
+            <div class="map-preview" id="map-preview"></div>
+            <div class="map-info">
+              <div>
+                <div class="map-name" id="map-name">—</div>
+                <div class="map-sub" id="map-sub">—</div>
+              </div>
+            </div>
+            <p class="map-desc" id="map-desc"></p>
+            <button id="open-map" class="ghost-button" type="button">맵 선택</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- 하단: 우측에 캐릭터 선택 / 준비·시작 -->
+      <footer class="room-foot">
+        <div class="foot-hint" id="foot-hint"></div>
+        <div class="foot-actions">
+          <!-- 테스트용: 서버 연동 시 제거 -->
+          <button id="add-test" class="ghost-button" type="button" title="빈 자리에 준비 완료된 더미 참여자를 추가합니다">
+            + 테스트 참여자
+          </button>
+          <button id="open-char" class="ghost-button" type="button">캐릭터 선택</button>
+          <button id="action-button" class="primary-button" type="button">준비</button>
+        </div>
+      </footer>
+    </div>
+
+    <!-- 캐릭터 선택 팝업 -->
+    <div id="char-modal" class="modal-backdrop hidden">
+      <section class="screen-card char-modal">
+        <div class="char-modal-head">
+          <div>
+            <div class="eyebrow">SELECT OPERATOR</div>
+            <h2 id="char-modal-who">캐릭터 선택</h2>
+          </div>
+          <button id="char-back" class="ghost-button hidden" type="button">← 목록</button>
+        </div>
+
+        <div id="char-row" class="char-row"></div>
+        <div id="char-detail" class="char-detail hidden"></div>
+
+        <div class="modal-actions">
+          <button id="char-cancel" class="ghost-button" type="button">취소</button>
+          <button id="char-confirm" class="primary-button" type="button" disabled>
+            선택 완료 <span>↗</span>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 맵 선택 팝업 -->
+    <div id="map-modal" class="modal-backdrop hidden">
+      <section class="screen-card map-modal">
+        <div class="eyebrow">SELECT MAP</div>
+        <h2>맵 선택</h2>
+        <div id="map-choices" class="map-choices"></div>
+        <div class="modal-actions">
+          <button id="map-cancel" class="ghost-button" type="button">닫기</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 내보내기 확인 팝업 -->
+    <div id="kick-modal" class="modal-backdrop hidden">
+      <section class="screen-card kick-modal">
+        <div class="eyebrow">KICK PLAYER</div>
+        <h2 id="kick-message">님을 정말 내보내겠습니까?</h2>
+        <p class="kick-note">내보낸 참여자는 다시 참여할 수 있습니다.</p>
+        <div class="modal-actions">
+          <button id="kick-confirm" class="danger-button" type="button">내보내기</button>
+          <button id="kick-cancel" class="ghost-button" type="button">취소</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" aria-live="polite"></div>
+
+    <script src="../operators.js"></script>
+    <script type="module" src="./room-page.js"></script>
+  </body>
+</html>

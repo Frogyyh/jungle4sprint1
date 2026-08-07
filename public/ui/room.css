@@ -1,0 +1,740 @@
+/* ui/room.css — ui/room.html 방 상세 화면 전용 스타일 */
+body {
+  overflow: hidden;
+}
+
+.room-layout {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: 100vw;
+  height: 100vh;
+  padding: 22px 30px 20px;
+  gap: 16px;
+}
+
+/* ---------- 상단 ---------- */
+
+.room-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.room-head h2 {
+  margin: 6px 0 0;
+  font-size: 28px;
+  letter-spacing: -0.04em;
+}
+
+.room-meta {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.room-meta b {
+  color: #b9cbd1;
+}
+
+/* 방 비밀번호 — 방 안에 있는 사람에게만 보인다 */
+.room-pw {
+  margin-left: 10px;
+  padding: 2px 8px;
+  border: 1px solid var(--flash);
+  color: var(--flash);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+/* ---------- 본문: 왼쪽 참여자 / 오른쪽 맵 ---------- */
+
+.room-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  min-height: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.col-label {
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.15em;
+  font-weight: 800;
+}
+
+/* 팀 */
+
+/* A팀 / B팀을 좌우로 나눈다. */
+.teams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  min-height: 0;
+}
+
+.team {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #ffffff06;
+  min-height: 0;
+}
+
+.team.team-a {
+  border-left: 2px solid var(--cyan);
+}
+
+.team.team-b {
+  border-left: 2px solid var(--orange);
+}
+
+.team-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 11px;
+}
+
+.team-name {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+}
+
+.team-a .team-name {
+  color: var(--cyan);
+}
+
+.team-b .team-name {
+  color: var(--orange);
+}
+
+.team-join {
+  border: 1px solid var(--line);
+  padding: 4px 9px;
+  color: var(--muted);
+  background: transparent;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.team-join:hover:not(:disabled) {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.team-join:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* 팀원은 팀명 아래로 한 줄에 한 명씩 세로로 쌓는다. */
+.slots {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* 스크롤은 되지만 스크롤바는 숨긴다. */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* 좁은 화면에서 본문도 세로로 스크롤된다 — 같이 숨긴다. */
+.slots::-webkit-scrollbar,
+.room-body::-webkit-scrollbar {
+  display: none;
+}
+
+/* 초상화(44) + 상하 여백 — 빈 자리도 같은 높이를 쓴다. */
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  background: #ffffff09;
+  min-width: 0;
+  min-height: 68px;
+}
+
+/* 빈 자리는 눌러서 테스트 봇을 채운다. */
+.slot.empty {
+  width: 100%;
+  border-style: dashed;
+  border-color: #22343d;
+  background: transparent;
+  justify-content: center;
+  color: #43585f;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.slot.empty:hover,
+.slot.empty:focus-visible {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: #6de6df0f;
+  outline: none;
+}
+
+.slot.me {
+  border-color: var(--cyan);
+  background: #6de6df14;
+}
+
+.slot-portrait {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: #050e14;
+}
+
+.slot-portrait.none {
+  color: #3b4f57;
+  font-size: 18px;
+}
+
+.slot-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.slot-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-tag {
+  flex: none;
+  padding: 1px 5px;
+  color: #071117;
+  background: var(--flash);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+/* 봇 표시 — 사람과 헷갈리지 않게 테두리만 두른다. */
+.bot-tag {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid #46606b;
+  color: #8ea6ae;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.slot-char {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slot-ready {
+  flex: none;
+  position: relative;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.slot-ready.on {
+  color: #55f0b0;
+}
+
+.slot-ready.off {
+  color: #4e6872;
+}
+
+/* 방장이 내보낼 수 있는 자리 — 올려두면 붉게 표시된다. */
+.slot.kickable {
+  cursor: context-menu;
+}
+
+.slot.kickable:hover {
+  border-color: var(--red);
+}
+
+/* 방장이 눌러서 직업을 바꿀 수 있는 봇 자리 */
+.slot.slot-clickable {
+  cursor: pointer;
+}
+
+.slot.slot-clickable:hover {
+  border-color: var(--cyan);
+  background: #6de6df12;
+}
+
+/* READY 표시 위에 1초 머무는 동안 차오르는 눈금.
+   다 차면 그 자리에 내보내기 버튼이 뜬다. */
+.slot-ready.holding::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -4px;
+  height: 2px;
+  background: var(--red);
+  transform-origin: left;
+  animation: kick-hold 1s linear forwards;
+}
+
+@keyframes kick-hold {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.slot-kick {
+  flex: none;
+  padding: 5px 9px;
+  border: 1px solid var(--red);
+  color: var(--red);
+  background: transparent;
+  font-family: inherit;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.slot-kick:hover,
+.slot-kick:focus-visible {
+  color: #0b1116;
+  background: var(--red);
+  outline: none;
+}
+
+/* 맵 */
+
+.map-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #ffffff06;
+  min-height: 0;
+}
+
+.map-preview {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #030a0f;
+}
+
+.map-preview svg {
+  max-height: 100%;
+}
+
+.map-info {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.map-name {
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.map-sub {
+  margin-top: 4px;
+  color: var(--cyan);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.map-desc {
+  margin: 10px 0 0;
+  color: #a9bcc2;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.map-panel .ghost-button {
+  margin-top: 12px;
+  width: 100%;
+}
+
+/* ---------- 하단 액션 (우측 하단) ---------- */
+
+.room-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.foot-hint {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.foot-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.primary-button.ready-on {
+  background: #55f0b0;
+  box-shadow: 0 8px 22px #55f0b038;
+}
+
+/* ---------- 캐릭터 선택 팝업 ---------- */
+
+.char-modal {
+  width: min(960px, 100%);
+  text-align: left;
+}
+
+.char-modal-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.char-modal-head h2 {
+  margin: 6px 0 0;
+}
+
+/* 10개 병과를 한눈에 비교하는 반응형 그리드 */
+
+.char-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(118px, 1fr));
+  gap: 10px;
+  max-height: min(58vh, 520px);
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.char-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  min-height: 142px;
+  padding: 13px 8px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #ffffff09;
+  font-family: inherit;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.char-card:hover,
+.char-card:focus-visible {
+  border-color: var(--accent, var(--cyan));
+  background: #ffffff14;
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.char-card.picked {
+  border-color: var(--accent, var(--cyan));
+  background: color-mix(in srgb, var(--accent, var(--cyan)) 14%, transparent);
+}
+
+.char-card .cname {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.char-card .ckorean {
+  color: var(--accent, var(--cyan));
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.char-card .crole {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+@media (max-width: 760px) {
+  .char-row { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+}
+
+/* 상세: 왼쪽 이미지 / 오른쪽 설명 */
+
+.char-detail {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 26px;
+  align-items: start;
+  min-height: 260px;
+}
+
+.detail-portrait {
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: #050e14;
+}
+
+.detail-portrait .tagline {
+  margin-top: 12px;
+  color: var(--accent, var(--cyan));
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-align: center;
+}
+
+.detail-body h3 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: -0.04em;
+  color: var(--accent, var(--cyan));
+}
+
+.detail-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.tag {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  color: #b9cbd1;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.tag.weapon {
+  border-color: var(--accent, var(--cyan));
+  color: var(--accent, var(--cyan));
+}
+
+.tag.built {
+  border-color: #55f0b0;
+  color: #55f0b0;
+}
+
+.detail-desc {
+  margin: 16px 0 0;
+  color: #c0d0d4;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.detail-stats {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+  max-width: 320px;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+}
+
+.pips {
+  display: flex;
+  gap: 4px;
+}
+
+.pips i {
+  flex: 1;
+  height: 5px;
+  background: #ffffff14;
+}
+
+.pips i.on {
+  background: var(--accent, var(--cyan));
+}
+
+.detail-traits {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 7px;
+}
+
+.detail-traits li {
+  display: flex;
+  gap: 8px;
+  color: #a9bcc2;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.detail-traits li::before {
+  content: "▸";
+  color: var(--accent, var(--cyan));
+}
+
+/* ---------- 내보내기 확인 팝업 ---------- */
+
+.kick-modal {
+  width: min(400px, 100%);
+  text-align: center;
+}
+
+.kick-modal .eyebrow {
+  color: var(--red);
+}
+
+.kick-modal h2 {
+  margin: 10px 0 8px;
+  font-size: 20px;
+  line-height: 1.45;
+  letter-spacing: -0.02em;
+}
+
+.kick-modal h2 .kick-name {
+  color: var(--red);
+}
+
+.kick-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+/* 확인 팝업은 버튼도 가운데. */
+.kick-modal .modal-actions {
+  justify-content: center;
+}
+
+/* ---------- 맵 선택 팝업 ---------- */
+
+.map-modal {
+  width: min(760px, 100%);
+  text-align: left;
+}
+
+.map-choices {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.map-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #ffffff09;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: 0.18s ease;
+}
+
+.map-choice:hover,
+.map-choice.picked {
+  border-color: var(--cyan);
+  background: #6de6df1f;
+}
+
+.map-choice .mc-name {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.map-choice .mc-sub {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+@media (max-width: 900px) {
+  .room-layout {
+    padding: 16px;
+  }
+  .room-body {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .char-detail {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .map-choices {
+    grid-template-columns: 1fr;
+  }
+  .room-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .foot-hint {
+    text-align: center;
+  }
+}
