@@ -172,6 +172,8 @@ export class Lobby extends DurableObject {
 export class GameRoom extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
+    this.roomCache = null;
+    this.lastRealtimePersistAt = 0;
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
   }
 
@@ -185,13 +187,25 @@ export class GameRoom extends DurableObject {
   }
 
   async load() {
-    return this.ctx.storage.get("room");
+    if (this.roomCache) return this.roomCache;
+    this.roomCache = await this.ctx.storage.get("room");
+    return this.roomCache;
   }
 
   async save(room, notifyDirectory = true) {
     room.updatedAt = Date.now();
+    this.roomCache = room;
     await this.ctx.storage.put("room", room);
     if (notifyDirectory) await this.updateDirectory(room);
+  }
+
+  async persistRealtime(room, force = false) {
+    this.roomCache = room;
+    const now = Date.now();
+    if (!force && now - this.lastRealtimePersistAt < 30000) return;
+    this.lastRealtimePersistAt = now;
+    room.updatedAt = now;
+    await this.ctx.storage.put("room", room);
   }
 
   summary(room) {
@@ -444,7 +458,7 @@ export class GameRoom extends DurableObject {
         member.barrierActive = false;
       }
     }
-    await this.ctx.storage.put("room", room);
+    await this.persistRealtime(room);
     this.broadcast(room, { type: "state", player: publicMember(member), fx }, ws);
   }
 
@@ -534,7 +548,7 @@ export class GameRoom extends DurableObject {
       if (Math.abs(delta) <= Math.PI / 6) {
         target.barrierHp = Math.max(0, target.barrierHp - damage);
         if (target.barrierHp <= 0) target.barrierActive = false;
-        await this.ctx.storage.put("room", room);
+        await this.persistRealtime(room);
         this.broadcast(room, { type: "barrier", playerId: target.id, hp: target.barrierHp, damage });
         return;
       }
@@ -552,7 +566,8 @@ export class GameRoom extends DurableObject {
       room.status = "finished";
       room.winner = [...aliveTeams][0] || null;
     }
-    await this.save(room);
+    if (room.status === "finished") await this.save(room);
+    else await this.persistRealtime(room);
     this.broadcast(room, { type: "hit", attackerId: attacker.id, targetId: target.id, damage, hp: target.hp, alive: target.alive, slowed });
     if (room.status === "finished") this.broadcast(room, { type: "finish", winner: room.winner, room: this.publicRoom(room) });
   }
