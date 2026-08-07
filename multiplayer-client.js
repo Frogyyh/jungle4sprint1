@@ -14,8 +14,6 @@
   const actors = new Map();
   const hostBots = []; // 방장이 직접 돌리는 봇 액터
   const remoteFx = new Map(); // playerId → 원격 스킬 효과 메시
-  const ALLY_SHOT = 0x6de6df; // 아군 총알
-  const ENEMY_SHOT = 0xff6b67; // 적 총알
   let resolveReady;
   let rejectReady;
   const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
@@ -174,11 +172,6 @@
 
       /* 총알 색으로 편을 가른다 — 병과별 색은 예쁘지만 교전 중에는
          "내 편이 쏜 것인가"가 먼저 보여야 한다. */
-      const projectile = this.projectiles[this.projectiles.length - 1];
-      if (active && projectile?.mesh?.material?.color) {
-        projectile.mesh.material.color.setHex(source?.team === "enemy" ? ENEMY_SHOT : ALLY_SHOT);
-      }
-
       const shooterId = controlledId(source);
       if (!shooterId || !active || this.phase !== "playing") return;
       send({
@@ -335,7 +328,11 @@
     if (tip) fx.t = [Math.round(tip.x), Math.round(tip.y)];
     const swing = game._meleeSwing;
     if (swing && game.now < swing.until) {
-      fx.m = [Number(swing.direction.toFixed(2)), Math.round(swing.range), swing.color];
+      const progress = Math.min(1, Math.max(0, (game.now - swing.startedAt) / Math.max(0.01, swing.until - swing.startedAt)));
+      fx.m = [
+        Number(swing.direction.toFixed(2)), Math.round(swing.range), swing.color,
+        swing.side, Number(progress.toFixed(2)),
+      ];
     }
     const dash = game._operatorDash;
     if (dash && game.now < dash.until) {
@@ -347,7 +344,12 @@
       fx.r = [Math.min(1, Math.max(0, Number((game.now - game._railChargeStartedAt).toFixed(2))))];
     }
     const scythe = game._scytheThrow;
-    if (scythe) fx.s = [Math.round(scythe.pos.x), Math.round(scythe.pos.y), scythe.out ? 1 : 0];
+    if (scythe) {
+      fx.s = [
+        Math.round(scythe.pos.x), Math.round(scythe.pos.y), scythe.out ? 1 : 0,
+        Number((scythe.rot || 0).toFixed(2)),
+      ];
+    }
     if (game._summons?.length) {
       fx.u = game._summons.slice(0, 3).map((summon) => [Math.round(summon.pos.x), Math.round(summon.pos.y)]);
     }
@@ -357,6 +359,8 @@
       fx.g = ownGrenades.slice(0, 8).map((grenade) => [
         Math.floor(Number(grenade.id) || 0), grenadeType[grenade.type],
         Math.round(grenade.pos.x), Math.round(grenade.pos.y),
+        Number(Math.max(0, grenade.fuse || 0).toFixed(2)),
+        Number(Math.max(0, grenade.initialFuse || grenade.fuse || 0).toFixed(2)),
       ]);
     }
     const ownSmokes = (game.smokes || []).filter((smoke) => smoke.owner === game.player && smoke.endAt > game.now);
@@ -370,7 +374,11 @@
     const flashSerial = Number.parseFloat(game.canvas.dataset.lastFlashShield || "");
     if (Number.isFinite(flashSerial)) fx.f = [flashSerial, Number(game.player.dir.toFixed(2))];
     const railSerial = game.activeOperatorId === "sentinel" ? game.player.shots : 0;
-    if (railSerial > 0) fx.l = [railSerial, Number(game.player.dir.toFixed(2)), 1300];
+    if (railSerial > 0) {
+      const halfWidth = (game.camera.right - game.camera.left) / 2;
+      const halfHeight = (game.camera.top - game.camera.bottom) / 2;
+      fx.l = [railSerial, Number(game.player.dir.toFixed(2)), Math.round(Math.hypot(halfWidth, halfHeight))];
+    }
     if (game._revealUntil > game.now) fx.v = [Number((game._revealUntil - game.now).toFixed(2))];
     return Object.keys(fx).length ? fx : null;
   }
@@ -403,6 +411,7 @@
   };
 
   const detonateRemoteGrenade = (actor, grenade) => {
+    grenade.telegraph?.remove();
     const type = ["flash", "smoke", "frag", "launcher"][grenade.type];
     if (!type) return disposeMarker(grenade.mesh);
     game.explode({ type, pos: actor.pos.clone().set(grenade.x, grenade.y), owner: actor, mesh: grenade.mesh });
@@ -411,18 +420,43 @@
   const syncRemoteGrenades = (actor, entry, rows = []) => {
     entry.grenades ||= new Map();
     const activeIds = new Set();
-    for (const [id, type, x, y] of rows) {
+    for (const [id, type, x, y, fuse, initialFuse] of rows) {
       activeIds.add(id);
       let grenade = entry.grenades.get(id);
       if (!grenade) {
         const colors = [0xffe67d, 0x9bb5ff, 0xff6b67, 0xffa8f0];
-        grenade = { id, type, x, y, mesh: markerMesh(colors[type] || 0xffffff, 0.34, 0.95) };
+        const mesh = markerMesh(colors[type] || 0xffffff, 0.34, 0.95);
+        game.styleGrenadeMesh?.({ type: ["flash", "smoke", "frag", "launcher"][type], mesh });
+        let telegraph = null;
+        if (type !== 3) {
+          telegraph = document.createElement("div");
+          telegraph.className = "throw-telegraph";
+          telegraph.innerHTML = '<div class="telegraph-sweep"></div><div class="telegraph-core"><span class="telegraph-icon">!</span></div><span class="telegraph-time">0.0s</span>';
+          document.querySelector("#throw-telegraphs")?.appendChild(telegraph);
+        }
+        grenade = { id, type, x, y, fuse, initialFuse, mesh, telegraph };
         entry.grenades.set(id, grenade);
       }
       grenade.x = x;
       grenade.y = y;
+      grenade.fuse = fuse;
+      grenade.initialFuse = initialFuse;
       grenade.mesh.position.set(x, y, 19);
       grenade.mesh.rotation.z += 0.24;
+      if (grenade.telegraph && game.positionGrenadeTelegraph) {
+        const kind = ["flash", "smoke", "frag", "launcher"][type];
+        const radius = game.getGadgetRadius?.(kind) || 100;
+        const progress = initialFuse > 0 ? 1 - fuse / initialFuse : 0;
+        game.positionGrenadeTelegraph(
+          grenade.telegraph,
+          actor.pos.clone().set(x, y),
+          kind,
+          radius,
+          progress,
+          `${Math.max(0, fuse).toFixed(1)}s`,
+          actor.team === "enemy"
+        );
+      }
     }
     for (const [id, grenade] of [...entry.grenades]) {
       if (activeIds.has(id)) continue;
@@ -465,16 +499,59 @@
       entry.barrier = [];
       return;
     }
-    while (strips.length < 6) strips.push(stripMesh(barrier[0] < 88 ? 0xff8a7a : 0x9bd0ff, 0.7));
+    while (strips.length < 24) {
+      const index = strips.length;
+      strips.push(stripMesh(0x9bd0ff, index < 12 ? 0.14 : index < 22 ? 0.85 : 0.9));
+    }
     const half = Math.PI / 6;
-    strips.forEach((strip, index) => {
-      const a = actor.dir - half + index / strips.length * half * 2;
-      const b = actor.dir - half + (index + 1) / strips.length * half * 2;
-      placeStrip(strip,
+    const hpFraction = Math.max(0, Math.min(1, barrier[0] / 250));
+    strips.forEach((strip) => strip.material.color.setHex(hpFraction > 0.35 ? 0x9bd0ff : 0xff8a7a));
+    for (let index = 0; index < 12; index++) {
+      const a = actor.dir - half + index / 12 * half * 2;
+      const b = actor.dir - half + (index + 1) / 12 * half * 2;
+      placeStrip(strips[index],
         { x: actor.pos.x + Math.cos(a) * 82, y: actor.pos.y + Math.sin(a) * 82 },
-        { x: actor.pos.x + Math.cos(b) * 100, y: actor.pos.y + Math.sin(b) * 100 }, 5);
+        { x: actor.pos.x + Math.cos(b) * 100, y: actor.pos.y + Math.sin(b) * 100 }, 9);
+    }
+    for (let index = 0; index < 10; index++) {
+      const a = actor.dir - half + index / 10 * half * 2;
+      const b = actor.dir - half + (index + 1) / 10 * half * 2;
+      const radius = 100 * (0.88 + hpFraction * 0.12);
+      placeStrip(strips[12 + index],
+        { x: actor.pos.x + Math.cos(a) * radius, y: actor.pos.y + Math.sin(a) * radius },
+        { x: actor.pos.x + Math.cos(b) * radius, y: actor.pos.y + Math.sin(b) * radius }, 3);
+    }
+    [-half, half].forEach((offset, index) => {
+      const angle = actor.dir + offset;
+      placeStrip(strips[22 + index],
+        { x: actor.pos.x + Math.cos(angle) * 55, y: actor.pos.y + Math.sin(angle) * 55 },
+        { x: actor.pos.x + Math.cos(angle) * 100, y: actor.pos.y + Math.sin(angle) * 100 }, 3.4);
     });
     entry.barrier = strips;
+  };
+
+  const syncRailCharge = (actor, entry, charge) => {
+    const strips = entry.railCharge || [];
+    if (!charge || !actor.alive) {
+      strips.forEach(disposeStrip);
+      entry.railCharge = [];
+      return;
+    }
+    while (strips.length < 4) strips.push(stripMesh(strips.length > 1 ? 0x9ef0ff : 0x55f0b0, 0.7));
+    const amount = charge[0];
+    const direction = { x: Math.cos(actor.dir), y: Math.sin(actor.dir) };
+    const perpendicular = { x: -direction.y, y: direction.x };
+    const muzzle = { x: actor.pos.x + direction.x * 42, y: actor.pos.y + direction.y * 42 };
+    const spread = 54 * (1 - amount) + 14;
+    [-1, -0.45, 0.45, 1].forEach((side, index) => {
+      const source = {
+        x: actor.pos.x + direction.x * (4 + Math.abs(side) * 8) + perpendicular.x * spread * side,
+        y: actor.pos.y + direction.y * (4 + Math.abs(side) * 8) + perpendicular.y * spread * side,
+      };
+      strips[index].material.opacity = 0.35 + amount * 0.5;
+      placeStrip(strips[index], source, muzzle, 1.8 + amount * 1.4);
+    });
+    entry.railCharge = strips;
   };
 
   const showRemoteBurst = (actor, direction, color, range, halfAngle = 0) => {
@@ -482,7 +559,11 @@
     for (let index = 0; index < count; index++) {
       const angle = direction + (halfAngle ? -halfAngle + index / (count - 1) * halfAngle * 2 : 0);
       const strip = stripMesh(index % 2 ? color : 0xffffff, 0.85);
-      placeStrip(strip, actor.pos, {
+      const start = halfAngle ? actor.pos : {
+        x: actor.pos.x + Math.cos(angle) * (actor.radius + 10),
+        y: actor.pos.y + Math.sin(angle) * (actor.radius + 10),
+      };
+      placeStrip(strip, start, {
         x: actor.pos.x + Math.cos(angle) * range,
         y: actor.pos.y + Math.sin(angle) * range,
       }, halfAngle ? 5 : index ? 13 : 4);
@@ -504,16 +585,89 @@
     }
   };
 
+  const showMeleeArc = (actor, direction, range, color) => {
+    const halfAngle = actor.operatorId === "reaper" ? Math.PI * 0.31 : Math.PI * 0.29;
+    const segments = 12;
+    for (let index = 0; index < segments; index++) {
+      const a = direction - halfAngle + index / segments * halfAngle * 2;
+      const b = direction - halfAngle + (index + 1) / segments * halfAngle * 2;
+      const strip = stripMesh(color, 0.72);
+      placeStrip(strip,
+        { x: actor.pos.x + Math.cos(a) * range, y: actor.pos.y + Math.sin(a) * range },
+        { x: actor.pos.x + Math.cos(b) * range, y: actor.pos.y + Math.sin(b) * range }, 3.8);
+      window.setTimeout(() => disposeStrip(strip), 360);
+    }
+  };
+
+  const syncRemoteMelee = (actor, entry, melee) => {
+    if (!melee || !actor.alive) {
+      if (entry.meleeAnimating) game.applyWeaponVisual(actor, actor.weapon?.id);
+      entry.meleeAnimating = false;
+      return;
+    }
+    const [direction, range, color, side, progress] = melee;
+    if (!entry.meleeAnimating || progress < (entry.meleeProgress || 0)) {
+      entry.meleeAnimating = true;
+      showMeleeArc(actor, direction, range, color);
+    }
+    entry.meleeProgress = progress;
+    const halfAngle = actor.operatorId === "reaper" ? Math.PI * 0.31 : Math.PI * 0.29;
+    const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+    const localAngle = side === 1
+      ? -halfAngle + eased * halfAngle * 2
+      : halfAngle - eased * halfAngle * 2;
+    const root = actor._weaponVisualRoot;
+    const pieces = root?.children?.length ? root.children : actor.mesh.children;
+    for (const piece of pieces.filter((part) => part.userData?.breachlineWeaponPiece || part.userData?.breachlineWeaponClone)) {
+      const baseX = piece.userData.breachlineBaseX ?? piece.position.x;
+      const baseY = (piece.userData.breachlineBaseY ?? piece.position.y) - 10;
+      const cos = Math.cos(localAngle);
+      const sin = Math.sin(localAngle);
+      piece.position.x = baseX * cos - baseY * sin;
+      piece.position.y = 10 + baseX * sin + baseY * cos;
+      piece.rotation.z = (piece.userData.breachlineBaseRotation || 0) + localAngle;
+    }
+  };
+
+  const createRemoteScythe = (actor) => {
+    const source = actor._weaponVisualRoot;
+    if (!source) return markerMesh(0xc59bff, 0.72, 0.9);
+    const scythe = source.clone(true);
+    scythe.traverse((part) => {
+      if (part.geometry) part.geometry = part.geometry.clone();
+      if (Array.isArray(part.material)) part.material = part.material.map((material) => material.clone());
+      else if (part.material) part.material = part.material.clone();
+    });
+    source.visible = false;
+    game.fxGroup.add(scythe);
+    return scythe;
+  };
+
+  const disposeRemoteScythe = (actor, scythe) => {
+    if (!scythe) return;
+    scythe.parent?.remove(scythe);
+    scythe.traverse((part) => {
+      part.geometry?.dispose?.();
+      if (Array.isArray(part.material)) part.material.forEach((material) => material.dispose?.());
+      else part.material?.dispose?.();
+    });
+    if (actor?._weaponVisualRoot) actor._weaponVisualRoot.visible = true;
+  };
+
   function clearRemoteFx(playerId = null) {
     for (const [id, entry] of remoteFx) {
       if (playerId && id !== playerId) continue;
       if (entry.tongue) disposeStrip(entry.tongue);
       if (entry.melee) disposeStrip(entry.melee);
-      for (const strip of entry.barrier || []) disposeStrip(strip);
-      for (const marker of [entry.dash, entry.railCharge, entry.scythe, entry.reveal, ...(entry.summons || [])]) {
+      for (const strip of [...(entry.barrier || []), ...(entry.railCharge || [])]) disposeStrip(strip);
+      for (const marker of [entry.dash, entry.reveal, ...(entry.summons || [])]) {
         disposeMarker(marker);
       }
-      for (const grenade of entry.grenades?.values?.() || []) disposeMarker(grenade.mesh);
+      disposeRemoteScythe(actors.get(id), entry.scythe);
+      for (const grenade of entry.grenades?.values?.() || []) {
+        grenade.telegraph?.remove();
+        disposeMarker(grenade.mesh);
+      }
       remoteFx.delete(id);
     }
   }
@@ -533,16 +687,7 @@
     }
 
     // 근접 휘두름 — 앞쪽으로 뻗는 짧은 궤적
-    if (fx?.m && actor.alive) {
-      const [dir, range, color] = fx.m;
-      entry.melee = entry.melee || stripMesh(color || 0xffffff, 0.75);
-      const tip = { x: actor.pos.x + Math.cos(dir) * range, y: actor.pos.y + Math.sin(dir) * range };
-      placeStrip(entry.melee, actor.pos, tip, Math.max(14, range * 0.45));
-      entry.meleeUntil = performance.now() + 260;
-    } else if (entry.melee && performance.now() > (entry.meleeUntil || 0)) {
-      disposeStrip(entry.melee);
-      entry.melee = null;
-    }
+    syncRemoteMelee(actor, entry, fx?.m);
 
     if (fx?.d && actor.alive) {
       const colors = [0xffd166, 0x9ef0ff, 0x9bb5ff];
@@ -559,14 +704,7 @@
 
     syncBarrier(actor, entry, fx?.b);
 
-    if (fx?.r && actor.alive) {
-      entry.railCharge ||= markerMesh(0x55f0b0, 1.2 + fx.r[0], 0.28 + fx.r[0] * 0.35);
-      entry.railCharge.position.set(actor.pos.x, actor.pos.y, 14);
-      entry.railCharge.scale.setScalar(1.2 + fx.r[0]);
-    } else if (entry.railCharge) {
-      disposeMarker(entry.railCharge);
-      entry.railCharge = null;
-    }
+    syncRailCharge(actor, entry, fx?.r);
 
     if (fx?.l && entry.railSerial !== fx.l[0]) {
       entry.railSerial = fx.l[0];
@@ -574,11 +712,11 @@
     }
 
     if (fx?.s) {
-      entry.scythe ||= markerMesh(0xc59bff, 0.72, 0.9);
+      entry.scythe ||= createRemoteScythe(actor);
       entry.scythe.position.set(fx.s[0], fx.s[1], 22);
-      entry.scythe.rotation.z += fx.s[2] ? 0.32 : -0.32;
+      entry.scythe.rotation.z = fx.s[3];
     } else if (entry.scythe) {
-      disposeMarker(entry.scythe);
+      disposeRemoteScythe(actor, entry.scythe);
       entry.scythe = null;
     }
 

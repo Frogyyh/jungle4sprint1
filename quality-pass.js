@@ -347,6 +347,7 @@
       if (timer) timer.textContent = label;
       return screen;
     };
+    game.positionGrenadeTelegraph = positionTelegraph;
 
     game._grenadeTelegraphs = new Map();
     const syncGrenadeTelegraphs = () => {

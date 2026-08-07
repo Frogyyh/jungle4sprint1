@@ -899,17 +899,19 @@
     const originalSpawnProjectile = game.spawnProjectile.bind(game);
     game.spawnProjectile = function spawnOperatorProjectile(source, position, direction, weapon) {
       let muzzle = position;
-      if (source === this.player && isOperator("gunslinger")) {
-        const perpendicular = vector(-direction.y, direction.x).multiplyScalar(7 * this._gunHand);
+      const gunslinger = source === this.player ? isOperator("gunslinger") : source?.operatorId === "gunslinger";
+      if (gunslinger) {
+        source._gunHand = source._gunHand || 1;
+        const perpendicular = vector(-direction.y, direction.x).multiplyScalar(7 * source._gunHand);
         muzzle = position.clone().add(perpendicular);
-        this._gunHand *= -1;
+        source._gunHand *= -1;
       } else if (weapon && (weapon.pellets || 1) > 1) {
         // 다발 펠릿(샷건 등): 발사원에 가깝게 생성해 근거리에서도 전탄이 적중한다.
         muzzle = position.clone().sub(direction.clone().multiplyScalar(6));
       }
       originalSpawnProjectile(source, muzzle, direction, weapon);
       const projectile = this.projectiles[this.projectiles.length - 1];
-      if (source === this.player && isOperator("sniper") && projectile) {
+      if ((source === this.player ? isOperator("sniper") : source?.operatorId === "sniper") && projectile) {
         projectile.mesh.scale.set(1.5, 1.35, 1);
       }
     };

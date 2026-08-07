@@ -63,13 +63,13 @@ const cleanFx = (fx) => {
   if (!fx || typeof fx !== "object") return null;
   const cleaned = {};
   const tongue = numbers(fx.t, 2);
-  const melee = numbers(fx.m, 3);
+  const melee = numbers(fx.m, 5);
   const dash = numbers(fx.d, 2);
   const barrier = numbers(fx.b, 1);
   const railCharge = numbers(fx.r, 1);
-  const scythe = numbers(fx.s, 3);
+  const scythe = numbers(fx.s, 4);
   const summons = numberRows(fx.u, 2, 3);
-  const grenades = numberRows(fx.g, 4, 8);
+  const grenades = numberRows(fx.g, 6, 8);
   const smokes = numberRows(fx.o, 6, 4);
   const flashShield = numbers(fx.f, 2);
   const railBeam = numbers(fx.l, 3);

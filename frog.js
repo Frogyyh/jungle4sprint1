@@ -341,7 +341,10 @@
     const originalSpawnProjectile = game.spawnProjectile.bind(game);
     game.spawnProjectile = function spawnSoapBubble(source, position, direction, weapon) {
       originalSpawnProjectile(source, position, direction, weapon);
-      if (source !== this.player || !isFrog()) return;
+      const frogProjectile = source === this.player
+        ? isFrog()
+        : source?.operatorId === "frog" || ["frog", "frog-auto-bubble"].includes(weapon?.id);
+      if (!frogProjectile) return;
 
       const projectile = this.projectiles[this.projectiles.length - 1];
       if (!projectile) return;
