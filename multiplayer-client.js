@@ -69,7 +69,9 @@
       const position = game.player.pos.clone().set(member.x ?? 0, member.y ?? 0);
       /* 상대의 병과를 그대로 입힌다 — 스프라이트(operatorId)와 무기가 여기서 갈린다.
          이게 없으면 모두가 내 무기를 든 군인으로 보인다. */
-      const weapon = game.operatorWeapons?.[member.characterId] || game.player.weapon;
+      const weapon = member.characterId === "frog"
+        ? (game.frogWeapon || game.operatorWeapons?.frog || game.player.weapon)
+        : (game.operatorWeapons?.[member.characterId] || game.player.weapon);
       const actor = new Bot(`net-${member.id.slice(0, 6)}`, position, weapon);
       actor.operatorId = member.characterId || "soldier";
       actor.ammo = weapon.magSize;
@@ -188,6 +190,51 @@
         dir: Math.atan2(direction.y, direction.x),
         weaponId: weapon?.id || source.weapon?.id || null,
       });
+    };
+
+    const segmentHitsCircle = (start, end, center, radius) => {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lengthSq = dx * dx + dy * dy;
+      const amount = lengthSq > 1e-9
+        ? Math.max(0, Math.min(1, ((center.x - start.x) * dx + (center.y - start.y) * dy) / lengthSq))
+        : 0;
+      const px = start.x + dx * amount;
+      const py = start.y + dy * amount;
+      return (center.x - px) ** 2 + (center.y - py) ** 2 <= radius * radius;
+    };
+
+    const originalUpdateProjectiles = game.updateProjectiles.bind(game);
+    game.updateProjectiles = function updateProjectilesAgainstRemoteSummons(dt) {
+      originalUpdateProjectiles(dt);
+      for (let index = this.projectiles.length - 1; index >= 0; index--) {
+        const projectile = this.projectiles[index];
+        const attackerId = controlledId(projectile.source);
+        if (!attackerId || !projectile._prevPos) continue;
+        let hit = null;
+        for (const [ownerId, entry] of remoteFx) {
+          if (entry.actor?.team !== "enemy") continue;
+          const marker = (entry.summons || []).find((summon) => segmentHitsCircle(
+            projectile._prevPos,
+            projectile.pos,
+            summon.position,
+            21,
+          ));
+          if (marker) {
+            hit = { ownerId, marker };
+            break;
+          }
+        }
+        if (!hit) continue;
+        send({
+          type: "summon-hit",
+          playerId: attackerId,
+          ownerId: hit.ownerId,
+          summonId: hit.marker.userData.summonId,
+          damage: projectile.damage,
+        });
+        this.removeProjectile(index);
+      }
     };
 
     /* 코어 AI 는 표적이 this.player 로 못박혀 있다. 봇마다 표적을 골라
@@ -360,7 +407,9 @@
       ];
     }
     if (game._summons?.length) {
-      fx.u = game._summons.slice(0, 3).map((summon) => [Math.round(summon.pos.x), Math.round(summon.pos.y)]);
+      fx.u = game._summons.slice(0, 3).map((summon) => [
+        summon.id, Math.round(summon.pos.x), Math.round(summon.pos.y), Math.max(0, Math.round(summon.hp)),
+      ]);
     }
     const grenadeType = { flash: 0, smoke: 1, frag: 2, launcher: 3 };
     const ownGrenades = (game.grenades || []).filter((grenade) => grenade.owner === game.player && grenadeType[grenade.type] !== undefined);
@@ -391,7 +440,9 @@
       const halfHeight = (game.camera.top - game.camera.bottom) / 2;
       fx.l = [railSerial, Number(game.player.dir.toFixed(2)), Math.round(Math.hypot(halfWidth, halfHeight))];
     }
-    if (game._revealUntil > game.now) fx.v = [Number((game._revealUntil - game.now).toFixed(2))];
+    if (game._revealUntil > game.now) {
+      fx.v = [Number((game._revealUntil - game.now).toFixed(2)), game._revealRange || 920];
+    }
     return Object.keys(fx).length ? fx : null;
   }
 
@@ -414,11 +465,11 @@
     marker?.material?.dispose?.();
   };
 
-  const syncPointMarkers = (entry, key, points, color, scale) => {
+  const syncPointMarkers = (entry, key, points, color, scale, xIndex = 0, yIndex = 1) => {
     const markers = entry[key] || [];
     while (markers.length < points.length) markers.push(markerMesh(color, scale));
     while (markers.length > points.length) disposeMarker(markers.pop());
-    points.forEach((point, index) => markers[index].position.set(point[0], point[1], 24));
+    points.forEach((point, index) => markers[index].position.set(point[xIndex], point[yIndex], 24));
     entry[key] = markers;
   };
 
@@ -499,6 +550,7 @@
       const point = actor.pos.clone().set(x, y);
       const existing = (game.smokes || []).find((smoke) => smoke.owner === actor && smoke.pos.distanceTo(point) < 24);
       if (existing) {
+        existing.ninjaSmoke = Boolean(ninja);
         existing.radius = radius;
         existing.endAt = game.now + remaining;
         existing.mesh?.scale?.setScalar(radius / 150);
@@ -511,6 +563,7 @@
       game.explode({ type: "smoke", pos: point, owner: actor, ninjaSmoke: Boolean(ninja), mesh });
       const smoke = game.smokes.length > before ? game.smokes[game.smokes.length - 1] : null;
       if (smoke) {
+        smoke.ninjaSmoke = Boolean(ninja);
         smoke.owner = actor;
         smoke.radius = radius;
         smoke.endAt = game.now + remaining;
@@ -583,20 +636,41 @@
   };
 
   const showRemoteBurst = (actor, direction, color, range, halfAngle = 0) => {
-    const count = halfAngle ? 7 : 2;
+    // A rail beam can cross the local vision polygon while its shooter is hidden.
+    // Split it into short pieces so only the pieces inside vision are rendered.
+    if (!halfAngle) {
+      const segmentLength = 42;
+      const startDistance = actor.radius + 10;
+      const segmentCount = Math.ceil(Math.max(0, range - startDistance) / segmentLength);
+      for (let segment = 0; segment < segmentCount; segment++) {
+        const fromDistance = startDistance + segment * segmentLength;
+        const toDistance = Math.min(range, fromDistance + segmentLength + 1);
+        for (const [beamColor, width, opacity] of [[color, 13, 0.82], [0xffffff, 4, 0.92]]) {
+          const strip = stripMesh(beamColor, opacity);
+          strip.userData.remoteFxOwner = actor;
+          placeStrip(strip, {
+            x: actor.pos.x + Math.cos(direction) * fromDistance,
+            y: actor.pos.y + Math.sin(direction) * fromDistance,
+          }, {
+            x: actor.pos.x + Math.cos(direction) * toDistance,
+            y: actor.pos.y + Math.sin(direction) * toDistance,
+          }, width);
+          window.setTimeout(() => disposeStrip(strip), 220);
+        }
+      }
+      return;
+    }
+    const count = 7;
     for (let index = 0; index < count; index++) {
       const angle = direction + (halfAngle ? -halfAngle + index / (count - 1) * halfAngle * 2 : 0);
       const strip = stripMesh(index % 2 ? color : 0xffffff, 0.85);
       strip.userData.remoteFxOwner = actor;
-      const start = halfAngle ? actor.pos : {
-        x: actor.pos.x + Math.cos(angle) * (actor.radius + 10),
-        y: actor.pos.y + Math.sin(angle) * (actor.radius + 10),
-      };
+      const start = actor.pos;
       placeStrip(strip, start, {
         x: actor.pos.x + Math.cos(angle) * range,
         y: actor.pos.y + Math.sin(angle) * range,
-      }, halfAngle ? 5 : index ? 13 : 4);
-      window.setTimeout(() => disposeStrip(strip), halfAngle ? 340 : 220);
+      }, 5);
+      window.setTimeout(() => disposeStrip(strip), 340);
     }
   };
 
@@ -747,6 +821,7 @@
       if (entry.dashGhosts) entry.dashGhosts.forEach(disposeStrip);
       for (const strip of [
         ...(entry.barrier || []), ...(entry.railCharge || []),
+        ...(entry.revealRings || []),
         ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
       ]) disposeStrip(strip);
       for (const marker of [entry.dash, entry.reveal, entry.landing, entry.gunKataPulse, ...(entry.summons || [])]) {
@@ -801,52 +876,95 @@ const syncRemoteDash = (actor, entry, fx) => {
 };
 
 /* 시야 밖 효과는 삭제하지 않고 숨긴다 — 다시 시야에 들어오면 즉시 복원 */
-const remoteCosmeticMeshes = (entry) => [
-  entry.tongue,
-  entry.dash,
-  entry.railCharge,
-  entry.scythe,
-  entry.reveal,
-  entry.landing,
-  ...(entry.dashGhosts || []),
-  ...(entry.barrier || []),
-  ...(entry.summons || []),
-];
-
 const setFxVisible = (effect, visible) => {
   if (effect) effect.visible = visible;
+};
+
+const isEffectVisibleAt = (actor, point) => {
+  if (!actor?.alive) return false;
+  if (actor.team !== "enemy") return true;
+  const probe = {
+    pos: game.player.pos.clone().set(point.x, point.y),
+    alive: true,
+    radius: 2,
+    team: actor.team,
+  };
+  return game.isVisible(game.player, probe, 45, 920);
+};
+
+const setRemoteEffectVisible = (actor, effect, alwaysVisible = false) => {
+  if (!effect) return;
+  effect.visible = actor.alive && (alwaysVisible || isEffectVisibleAt(actor, effect.position));
+};
+
+const syncRemoteReveal = (actor, entry, reveal) => {
+  if (!reveal) {
+    disposeMarker(entry.reveal);
+    entry.reveal = null;
+    for (const strip of entry.revealRings || []) disposeStrip(strip);
+    entry.revealRings = [];
+    return;
+  }
+  entry.reveal ||= markerMesh(0xff3b45, 1.65, 0.22);
+  entry.reveal.position.set(actor.pos.x, actor.pos.y, 11);
+  const range = Math.max(100, Math.min(1200, reveal[1] || 920));
+  const segments = 32;
+  const radii = [range * 0.55, range];
+  entry.revealRings ||= [];
+  while (entry.revealRings.length < segments * radii.length) {
+    const strip = stripMesh(0xff5963, 0.42);
+    strip.userData.remoteFxOwner = actor;
+    entry.revealRings.push(strip);
+  }
+  entry.revealRings.forEach((strip, index) => {
+    const band = Math.floor(index / segments);
+    const segment = index % segments;
+    const radius = radii[band];
+    const angleA = segment / segments * Math.PI * 2;
+    const angleB = (segment + 1) / segments * Math.PI * 2;
+    placeStrip(strip, {
+      x: actor.pos.x + Math.cos(angleA) * radius,
+      y: actor.pos.y + Math.sin(angleA) * radius,
+    }, {
+      x: actor.pos.x + Math.cos(angleB) * radius,
+      y: actor.pos.y + Math.sin(angleB) * radius,
+    }, band ? 3.2 : 2.2);
+  });
 };
 
 function syncRemoteFxVisibility() {
   for (const [id, entry] of remoteFx) {
     const actor = actors.get(id);
     if (!actor) continue;
-    const visible = actor.alive && (actor.team !== "enemy" || actor.mesh.visible);
-    setFxVisible(entry.tongue, visible);
-    setFxVisible(entry.dash, visible);
-    setFxVisible(entry.scythe, visible);
-    setFxVisible(entry.reveal, visible);
-    setFxVisible(entry.gunKataPulse, visible);
+    setRemoteEffectVisible(actor, entry.tongue);
+    setRemoteEffectVisible(actor, entry.dash);
+    setRemoteEffectVisible(actor, entry.scythe);
+    setRemoteEffectVisible(actor, entry.reveal);
+    setRemoteEffectVisible(actor, entry.gunKataPulse);
     for (const effect of [
-      ...(entry.barrier || []), ...(entry.railCharge || []), ...(entry.summons || []),
+      ...(entry.barrier || []), ...(entry.railCharge || []), ...(entry.revealRings || []),
       ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
-    ]) setFxVisible(effect, visible);
+    ]) setRemoteEffectVisible(actor, effect);
+    // Reaper summons are deliberate global information and ignore fog of war.
+    for (const summon of entry.summons || []) setRemoteEffectVisible(actor, summon, true);
     for (const grenade of entry.grenades?.values?.() || []) {
+      const visible = isEffectVisibleAt(actor, grenade.mesh.position);
       setFxVisible(grenade.mesh, visible);
+      setFxVisible(grenade.trail, visible);
       if (grenade.telegraph) grenade.telegraph.style.visibility = visible ? "" : "hidden";
     }
   }
   for (const child of game.fxGroup.children) {
     const owner = child.userData?.remoteFxOwner;
-    if (owner) child.visible = owner.alive && (owner.team !== "enemy" || owner.mesh.visible);
+    if (owner) setRemoteEffectVisible(owner, child);
   }
   for (const projectile of game.projectiles) {
     const owner = projectile.source;
-    if (owner?._remote) projectile.mesh.visible = owner.alive && (owner.team !== "enemy" || owner.mesh.visible);
+    if (owner?._remote) projectile.mesh.visible = isEffectVisibleAt(owner, projectile.pos);
   }
   for (const smoke of game.smokes) {
     const owner = smoke.owner;
-    if (owner?._remote) smoke.mesh.visible = owner.alive && (owner.team !== "enemy" || owner.mesh.visible);
+    if (owner?._remote) smoke.mesh.visible = isEffectVisibleAt(owner, smoke.pos);
   }
 }
 
@@ -871,29 +989,8 @@ function syncRemoteFxVisibility() {
     }
 
     // 피아식별 규칙: 적은 내 시야(원형/부채꼴/연막 내부) 안에 있을 때만 효과가 보인다.
-    const inView = actor.team === "player" || game.isVisible(game.player, actor, 45, 920);
-    if (!inView) {
-      for (const mesh of remoteCosmeticMeshes(entry)) {
-        if (mesh) mesh.visible = false;
-      }
-      if (entry.grenades) {
-        for (const grenade of entry.grenades.values()) {
-          if (grenade.mesh) grenade.mesh.visible = false;
-          if (grenade.trail) grenade.trail.visible = false;
-        }
-      }
-      remoteFx.set(playerId, entry);
-      return;
-    }
-    for (const mesh of remoteCosmeticMeshes(entry)) {
-      if (mesh) mesh.visible = true;
-    }
-    if (entry.grenades) {
-      for (const grenade of entry.grenades.values()) {
-        if (grenade.mesh) grenade.mesh.visible = true;
-        if (grenade.trail) grenade.trail.visible = true;
-      }
-    }
+    // Keep synchronizing effects even while the caster is hidden. Visibility is
+    // applied per effect position immediately before each render.
 
     // 개구리 혀 — 사람과 혀끝을 잇는 선
     if (fx?.t && actor.alive) {
@@ -928,20 +1025,17 @@ function syncRemoteFxVisibility() {
     }
 
     // 소환수 — 크고 밝은 마커 + 펄스
-    syncPointMarkers(entry, "summons", fx?.u || [], 0xd5dde2, 0.95);
+    syncPointMarkers(entry, "summons", fx?.u || [], 0xd5dde2, 0.95, 1, 2);
     (entry.summons || []).forEach((marker, index) => {
+      marker.userData.summonId = fx.u[index][0];
+      marker.userData.summonHp = fx.u[index][3];
+      marker.userData.summonOwnerId = playerId;
       marker.scale.setScalar(0.95 * (1 + Math.sin(performance.now() / 280 + index * 1.7) * 0.08));
     });
 
     applyFlashShield(actor, entry, fx?.f);
 
-    if (fx?.v) {
-      entry.reveal ||= markerMesh(0xff3b45, 1.65, 0.22);
-      entry.reveal.position.set(actor.pos.x, actor.pos.y, 11);
-    } else if (entry.reveal) {
-      disposeMarker(entry.reveal);
-      entry.reveal = null;
-    }
+    syncRemoteReveal(actor, entry, fx?.v);
 
     remoteFx.set(playerId, entry);
   }
@@ -960,6 +1054,9 @@ function syncRemoteFxVisibility() {
       "frog-auto-bubble": { ...actor.weapon, id: "frog-auto-bubble", damage: 2, pellets: 1, range: 334, projectileSpeed: 920, color: 0x83ffad },
     };
     game.spawnProjectile(actor, origin, direction, specialWeapons[message.weaponId] || actor.weapon);
+    // The auto-bubble already has its own round projectile. The generic yellow
+    // rectangular muzzle flash was the stray block seen by opponents.
+    if (message.weaponId === "frog-auto-bubble") return;
     // 총구섬광 — 상대 화면에서도 발사 순간이 보인다
     const flash = markerMesh(0xfff3c4, 0.5, 0.9);
     flash.position.set(message.x, message.y, 24);
@@ -1006,6 +1103,9 @@ function syncRemoteFxVisibility() {
         if (message.slowed) game._networkSlowUntil = performance.now() + 1000;
         game.renderUi();
       }
+    }
+    if (message.type === "summon-hit" && message.ownerId === playerId) {
+      game.damageSummon?.(message.summonId, message.damage);
     }
     if (message.type === "shot") spawnRemoteShot(message);
     if (message.type === "finish") finish(message.winner);

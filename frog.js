@@ -20,11 +20,16 @@
       projectileSpeed: 1200,
       color: 0x7eeeff,
     };
+    // Remote frogs must use the Bubble Sprayer, regardless of the local loadout.
+    game.frogWeapon = FROG;
     const vec = (x = 0, y = 0) => new game.player.pos.constructor(x, y);
     const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const ATTACHED_VISION_RADIUS = Math.round(920 * 0.33); // 시야 최대 거리(920)의 33% → 304
-    const TONGUE_PULL_SPEED = 260;
+    const TONGUE_PULL_SPEED = 1500;
     const MIN_TONGUE_LENGTH = 48;
+    const WALL_TONGUE_ADJUST = 72;
+    const FROG_MOMENTUM_MAX = 430;
+    const FROG_MOMENTUM_DAMPING = 0.035;
     const AUTO_BUBBLE_INTERVAL = 0.32;
     const AUTO_BUBBLE = {
       id: "frog-auto-bubble",
@@ -48,6 +53,7 @@
     let visionRing = null;
     let nextAutoBubbleAt = 0;
     let autoBubbleCount = 0;
+    const frogMomentum = vec();
 
     const disposeVisionRing = () => {
       if (!visionRing) return;
@@ -187,6 +193,7 @@
         tipPos: game.player.pos.clone().add(direction.clone().multiplyScalar(game.player.radius)),
         anchor: null,
         angularVelocity: 0,
+        releaseVelocity: vec(),
         group,
         strip,
         tip,
@@ -197,6 +204,10 @@
 
     const releaseTongue = () => {
       if (!tongue || tongue.phase === "retracting") return;
+      if (tongue.phase === "attached" && tongue.releaseVelocity.lengthSq() > 1) {
+        frogMomentum.copy(tongue.releaseVelocity);
+        if (frogMomentum.length() > FROG_MOMENTUM_MAX) frogMomentum.setLength(FROG_MOMENTUM_MAX);
+      }
       tongue.phase = "retracting";
       tongue.anchor = null;
       rightMouseHeld = false;
@@ -206,6 +217,7 @@
     const swing = (dt) => {
       const radial = game.player.pos.clone().sub(tongue.anchor);
       if (radial.lengthSq() < 1) return;
+      const previousPosition = game.player.pos.clone();
       const targetLength = rightMouseHeld
         ? Math.max(MIN_TONGUE_LENGTH, tongue.length - TONGUE_PULL_SPEED * dt)
         : tongue.length;
@@ -222,12 +234,43 @@
         radial.x * sin + radial.y * cos,
       );
       const candidate = tongue.anchor.clone().add(rotated);
-      if (game.collides(candidate, game.player.radius)) {
-        tongue.angularVelocity *= -0.2;
-      } else {
-        game.player.pos.copy(candidate);
-        tongue.length = targetLength;
+      let resolved = game.collides(candidate, game.player.radius) ? null : candidate;
+      let resolvedLength = targetLength;
+
+      if (!resolved) {
+        const radialDirection = rotated.clone().normalize();
+        for (let adjustment = 8; adjustment <= WALL_TONGUE_ADJUST && !resolved; adjustment += 8) {
+          for (const sign of [-1, 1]) {
+            const adjustedLength = clamp(targetLength + adjustment * sign, MIN_TONGUE_LENGTH, tongue.maxLength);
+            const adjusted = tongue.anchor.clone().add(radialDirection.clone().multiplyScalar(adjustedLength));
+            if (game.collides(adjusted, game.player.radius)) continue;
+            resolved = adjusted;
+            resolvedLength = adjustedLength;
+            break;
+          }
+        }
+      }
+
+      if (!resolved) {
+        const slideX = previousPosition.clone().set(candidate.x, previousPosition.y);
+        const slideY = previousPosition.clone().set(previousPosition.x, candidate.y);
+        const options = [slideX, slideY]
+          .filter((point) => !game.collides(point, game.player.radius))
+          .sort((a, b) => b.distanceToSquared(previousPosition) - a.distanceToSquared(previousPosition));
+        if (options.length) {
+          resolved = options[0];
+          resolvedLength = resolved.distanceTo(tongue.anchor);
+        }
+      }
+
+      if (resolved) {
+        game.player.pos.copy(resolved);
+        tongue.length = resolvedLength;
+        tongue.releaseVelocity.copy(resolved).sub(previousPosition).multiplyScalar(1 / Math.max(dt, 1 / 240));
         game.visibilityDirty = true;
+      } else {
+        tongue.angularVelocity *= 0.35;
+        tongue.releaseVelocity.multiplyScalar(0.45);
       }
       tongue.tipPos.copy(tongue.anchor);
     };
@@ -324,6 +367,7 @@
       rightMouseHeld = false;
       nextAutoBubbleAt = 0;
       autoBubbleCount = 0;
+      frogMomentum.set(0, 0);
       originalStartRound();
       if (wantsFrog) {
         this.selectedWeapon = "frog";
@@ -392,6 +436,14 @@
         originalUpdatePlayer(dt);
       }
       if (isFrog()) updateTongue(dt);
+      if (isFrog() && tongue?.phase !== "attached" && frogMomentum.lengthSq() > 1) {
+        this.moveActor(this.player, frogMomentum.clone().multiplyScalar(dt));
+        const steering = this.keys.has("KeyW") || this.keys.has("KeyA")
+          || this.keys.has("KeyS") || this.keys.has("KeyD");
+        const damping = steering ? FROG_MOMENTUM_DAMPING * 0.35 : FROG_MOMENTUM_DAMPING;
+        frogMomentum.multiplyScalar(Math.pow(damping, dt));
+        if (frogMomentum.lengthSq() < 4) frogMomentum.set(0, 0);
+      }
     };
 
     const originalIsVisible = game.isVisible.bind(game);
@@ -485,6 +537,7 @@
       this.canvas.dataset.soapBubbles = `${this.projectiles.filter((projectile) => projectile.isSoapBubble).length}`;
       this.canvas.dataset.tongueCooldown = "0.00";
       this.canvas.dataset.tonguePulling = rightMouseHeld ? "true" : "false";
+      this.canvas.dataset.frogMomentum = frogMomentum.length().toFixed(1);
       this.canvas.dataset.frogVisionRing = tongue?.phase === "attached" ? "visible" : "hidden";
       this.canvas.dataset.autoBubbles = `${autoBubbleCount}`;
     };

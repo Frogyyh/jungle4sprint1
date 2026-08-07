@@ -103,6 +103,7 @@
 
     game._operatorCooldowns = Object.create(null);
     game._summons = [];
+    game._summonSerial = 0;
     game._railChargeStartedAt = null;
     game._railNeedsRelease = false;
     game._gunHand = 1;
@@ -665,6 +666,8 @@
       originalExplode(grenade);
       if (grenade.ninjaSmoke && this.smokes.length > smokeCount) {
         const smoke = this.smokes[this.smokes.length - 1];
+        smoke.ninjaSmoke = true;
+        smoke.owner = grenade.owner;
         smoke.radius = NINJA_SMOKE_RADIUS;
         smoke.endAt = this.now + NINJA_SMOKE_DURATION;
         smoke.mesh.scale.setScalar(NINJA_SMOKE_RADIUS / 150);
@@ -1382,6 +1385,7 @@
         mesh.position.set(pos.x, pos.y, 10);
         game.entityGroup.add(mesh);
         game._summons.push({
+          id: ++game._summonSerial,
           pos,
           mesh,
           hp: 10, // 해골 체력 10 (기존 25)
@@ -1419,7 +1423,30 @@
       game._summons.splice(index, 1);
     }
 
+    const damageSummon = (summonId, amount) => {
+      const index = game._summons.findIndex((summon) => summon.id === summonId);
+      if (index < 0) return false;
+      const summon = game._summons[index];
+      summon.hp -= Math.max(1, Number(amount) || 1);
+      if (summon.hp > 0) return true;
+      for (let burst = 0; burst < 6; burst++) {
+        const angle = burst / 6 * Math.PI * 2;
+        const dir = vector(Math.cos(angle), Math.sin(angle));
+        createWorldStrip(
+          summon.pos.clone(),
+          summon.pos.clone().add(dir.multiplyScalar(18)),
+          3,
+          0x8d7bff,
+          { duration: 0.2, opacity: 0.8 },
+        );
+      }
+      removeSummon(index);
+      return true;
+    };
+    game.damageSummon = damageSummon;
+
     const REVEAL_DURATION = 7;
+    const REVEAL_RANGE = 920;
     const REVEAL_COOLDOWN = 15;
 
     const useReveal = () => {
@@ -1429,7 +1456,10 @@
       }
       beginCooldown("reveal", REVEAL_COOLDOWN);
       game._revealUntil = game.now + REVEAL_DURATION;
+      game._revealRange = REVEAL_RANGE;
       game.visibilityDirty = true;
+      createRangeRing(game.player, REVEAL_RANGE, 0xff5963, REVEAL_DURATION, 0.5);
+      createRangeRing(game.player, REVEAL_RANGE * 0.55, 0xff8b91, REVEAL_DURATION, 0.32);
       game.showToast(`THERMAL VISION // ${REVEAL_DURATION.toFixed(0)}s`);
     };
 
@@ -1667,6 +1697,11 @@
 
     const originalVisible = game.isVisible.bind(game);
     game.isVisible = function operatorVisibility(observer, target, coneDegrees, distance) {
+      // Ninja smoke is opaque from the inside, including for its owner.
+      const ninjaSmokeAt = (point) => this.smokes.find((smoke) => smoke.ninjaSmoke
+        && smoke.endAt > this.now && point.distanceTo(smoke.pos) < smoke.radius);
+      const observerNinjaSmoke = ninjaSmokeAt(observer.pos);
+      if (observerNinjaSmoke && ninjaSmokeAt(target.pos) !== observerNinjaSmoke) return false;
       // 닌자 패시브: 연막 안에 있는 모든 적은 절대 시야로 식별된다 (벽/연막 무시).
       if (observer === this.player && isOperator("ninja") && target !== observer && target.alive) {
         if (this.isInsideSmoke(target.pos) && target.pos.distanceTo(observer.pos) <= distance) {
@@ -1941,22 +1976,8 @@
         for (let summonIndex = game._summons.length - 1; summonIndex >= 0; summonIndex--) {
           const summon = game._summons[summonIndex];
           if (!segmentCircleHit(projectile._prevPos, projectile.pos, summon.pos, SUMMON_HIT_RADIUS + PROJECTILE_HIT_BUFFER)) continue;
-          summon.hp -= projectile.damage;
           this.removeProjectile(index);
-          if (summon.hp <= 0) {
-            for (let burst = 0; burst < 6; burst++) {
-              const angle = burst / 6 * Math.PI * 2;
-              const dir = vector(Math.cos(angle), Math.sin(angle));
-              createWorldStrip(
-                summon.pos.clone(),
-                summon.pos.clone().add(dir.clone().multiplyScalar(18)),
-                3,
-                0x8d7bff,
-                { duration: 0.2, opacity: 0.8 },
-              );
-            }
-            removeSummon(summonIndex);
-          }
+          damageSummon(summon.id, projectile.damage);
           break;
         }
       }

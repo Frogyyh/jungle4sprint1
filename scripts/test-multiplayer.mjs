@@ -70,6 +70,8 @@ for (const mapId of selectableMaps) {
 
 guest.send(JSON.stringify({ type: "action", action: "character", value: "bulwark" }));
 await host.next((message) => message.type === "room" && message.room.members.find((m) => m.id === joined.playerId)?.characterId === "bulwark");
+host.send(JSON.stringify({ type: "action", action: "character", value: "reaper" }));
+await guest.next((message) => message.type === "room" && message.room.members.find((m) => m.id === created.playerId)?.characterId === "reaper");
 guest.send(JSON.stringify({ type: "action", action: "ready", value: true }));
 await host.next((message) => message.type === "room" && message.room.members.find((m) => m.id === joined.playerId)?.ready);
 host.send(JSON.stringify({ type: "action", action: "start" }));
@@ -80,9 +82,9 @@ await Promise.all([
 
 const skillFx = {
   t: [-320, 80], m: [0.25, 120, 0xff739f, 1, 0.5], d: [0, 0.25, 0.5], b: [210], r: [0.75],
-  s: [-280, 30, 1, 1.25], u: [[-360, 30], [-350, 55], [-340, 80]],
+  s: [-280, 30, 1, 1.25], u: [[1, -360, 30, 10], [2, -350, 55, 10], [3, -340, 80, 10]],
   g: [[101, 0, -300, 20, 0.8, 1.5], [102, 3, -260, 25, 0, 0]],
-  o: [[201, -240, 25, 225, 1, 4.5]], f: [1.25, 0.25], l: [3, 0.25, 1300], v: [6.5],
+  o: [[201, -240, 25, 225, 1, 4.5]], f: [1.25, 0.25], l: [3, 0.25, 1300], v: [6.5, 920],
   p: [-250, 25],
 };
 host.send(JSON.stringify({ type: "state", x: -400, y: 25, dir: 0.25, fx: skillFx }));
@@ -90,6 +92,15 @@ const state = await guest.next((message) => message.type === "state" && message.
 if (state.player.x !== -400 || state.player.y !== 25) throw new Error("state relay mismatch");
 for (const key of Object.keys(skillFx)) {
   if (!state.fx?.[key]) throw new Error(`skill effect relay missing: ${key}`);
+}
+if (state.fx.v[1] !== 920) throw new Error("reveal range relay mismatch");
+
+guest.send(JSON.stringify({
+  type: "summon-hit", ownerId: created.playerId, summonId: 1, damage: 10,
+}));
+const summonHit = await host.next((message) => message.type === "summon-hit" && message.summonId === 1);
+if (summonHit.ownerId !== created.playerId || summonHit.damage !== 10) {
+  throw new Error("summon hit relay mismatch");
 }
 
 host.send(JSON.stringify({ type: "shot", x: -390, y: 25, dir: 0.25, weaponId: "dagger" }));

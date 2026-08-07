@@ -71,12 +71,12 @@ const cleanFx = (fx) => {
   const barrier = numbers(fx.b, 1);
   const railCharge = numbers(fx.r, 1);
   const scythe = numbers(fx.s, 4);
-  const summons = numberRows(fx.u, 2, 3);
+  const summons = numberRows(fx.u, 4, 3);
   const grenades = numberRows(fx.g, 6, 8); // [id, 종류, x, y, 남은 신관, 전체 신관]
   const smokes = numberRows(fx.o, 6, 4);
   const flashShield = numbers(fx.f, 2);
   const railBeam = numbers(fx.l, 3);
-  const reveal = numbers(fx.v, 1);
+  const reveal = numbers(fx.v, 2);
   const launcherLanding = numbers(fx.p, 2); // 유탄 착탄 지점
   if (tongue) cleaned.t = tongue;
   if (melee) cleaned.m = melee;
@@ -338,6 +338,7 @@ export class GameRoom extends DurableObject {
 
     if (data.type === "state") return this.handleState(room, member, data, ws);
     if (data.type === "hit") return this.handleHit(room, member, data);
+    if (data.type === "summon-hit") return this.handleSummonHit(room, member, data);
     if (data.type === "shot") return this.handleShot(room, member, data, ws);
     if (data.type === "leave") return this.handleLeave(room, member, ws);
     if (data.type !== "action" || room.status !== "lobby") return;
@@ -467,6 +468,27 @@ export class GameRoom extends DurableObject {
       weaponId,
       x, y, dir,
     }, ws);
+  }
+
+  async handleSummonHit(room, sender, data) {
+    const attacker = this.subjectOf(room, sender, data);
+    if (!attacker || room.status !== "playing" || !attacker.alive) return;
+    const owner = room.members.find((member) => member.id === data.ownerId);
+    const summonId = Number(data.summonId);
+    if (!owner || owner.team === attacker.team || owner.characterId !== "reaper" || !Number.isFinite(summonId)) return;
+    const summon = owner.skillFx?.u?.find((row) => row[0] === summonId);
+    if (!summon || Date.now() - (owner.skillFxAt || 0) > 350) return;
+    const dx = attacker.x - summon[1];
+    const dy = attacker.y - summon[2];
+    if (dx * dx + dy * dy > 1600 * 1600) return;
+    const damage = Math.max(1, Math.min(DAMAGE_LIMITS[attacker.characterId] || 40, Number(data.damage) || 1));
+    this.broadcast(room, {
+      type: "summon-hit",
+      attackerId: attacker.id,
+      ownerId: owner.id,
+      summonId,
+      damage,
+    });
   }
 
   /* 방을 아주 떠날 때(결과창 → 로비). 접속만 끊긴 것과 구분해서 바로 정리한다. */
