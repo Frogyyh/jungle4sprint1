@@ -28,6 +28,16 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
 const cleanText = (value, max = 32) => String(value ?? "").trim().slice(0, max);
 // 전원이 끊긴 방을 지우기까지 기다리는 시간. 화면 이동(방 → 게임) 중의 공백을 넘긴다.
 const EMPTY_ROOM_GRACE_MS = 20000;
+// 게임 종료 → 방 복귀 전환 구간: 소켓이 잠깐 끊겨도 멤버를 지우지 않는다(강제 퇴장 방지).
+const TRANSITION_GRACE_MS = 15000;
+// 게임 시작 → 게임 화면 전환 구간: 이 시간 안의 이탈은(로딩 지연 포함) 전투 이탈로 보지 않는다.
+const START_GRACE_MS = 12000;
+// 라운드 제한 시간(클라이언트 03:00 과 동일). 지나면 점수로 승자를 정하고 종료한다.
+const ROUND_DURATION_MS = 180000;
+// 로비에서 아무 동작 없이 5분 지나면 자동 퇴장.
+const IDLE_LIMIT_MS = 300000;
+// 로비 유휴 점검 주기.
+const IDLE_CHECK_INTERVAL_MS = 60000;
 const BOT_NAMES = ["봇 알파", "봇 브라보", "봇 찰리", "봇 델타", "봇 에코", "봇 폭스"];
 const roomName = (id) => `room:${id}`;
 const token = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
@@ -255,18 +265,22 @@ export class GameRoom extends DurableObject {
     if (await this.load()) return json({ error: "이미 생성된 방입니다." }, 409);
     const input = await request.json();
     const hostToken = token();
+    const now = Date.now();
     const host = {
       id: crypto.randomUUID(), name: cleanText(input.nickname, 12), team: "A",
       ready: true, characterId: "soldier", token: hostToken,
       connected: false, hp: 100, alive: true, x: -520, y: 0, dir: 0,
-      kills: 0, damage: 0, shots: 0, hits: 0,
+      kills: 0, damage: 0, shots: 0, hits: 0, lastActiveAt: now,
     };
     const room = {
       id: input.id, title: cleanText(input.title, 30), capacity: Number(input.capacity),
       password: cleanText(input.password, 4), mapId: "crossroads", status: "lobby",
-      hostId: host.id, members: [host], createdAt: Date.now(), updatedAt: Date.now(), winner: null,
+      hostId: host.id, members: [host], createdAt: now, updatedAt: now, winner: null,
+      emptyAt: now, // 아직 아무도 접속 안 함 — 유예 후 자동 삭제 기준
     };
     await this.save(room, false);
+    // 만들고 접속하지 않은 방은 유예 후 자동 삭제(방장이 접속하면 connect 가 취소).
+    await this.scheduleAlarm(room);
     return json({ room: this.publicRoom(room), token: hostToken, playerId: host.id });
   }
 
@@ -288,7 +302,7 @@ export class GameRoom extends DurableObject {
       characterId: "soldier", token: token(), connected: false,
       hp: 100, alive: true, x: team === "A" ? -520 : 520, y: 0,
       dir: team === "A" ? 0 : Math.PI,
-      kills: 0, damage: 0, shots: 0, hits: 0,
+      kills: 0, damage: 0, shots: 0, hits: 0, lastActiveAt: Date.now(),
     };
     room.members.push(member);
     await this.save(room);
@@ -321,6 +335,7 @@ export class GameRoom extends DurableObject {
     if (room.status === "finished") {
       room.status = "lobby";
       room.winner = null;
+      room.reopenedAt = Date.now(); // 방 복귀 전환 구간 시작 — 이탈로 인한 강제 퇴장 방지
       for (const player of room.members) {
         player.hp = 100;
         player.alive = true;
@@ -328,17 +343,30 @@ export class GameRoom extends DurableObject {
         clearStats(player);
       }
     }
-    // 누군가 들어왔으니 빈 방 정리 예약을 취소한다.
-    await this.ctx.storage.deleteAlarm();
     const [client, server] = Object.values(new WebSocketPair());
     const attachment = { playerId: member.id, roomId: room.id };
     server.serializeAttachment(attachment);
     this.ctx.acceptWebSocket(server, [`player:${member.id}`]);
     member.connected = true;
+    member.lastActiveAt = Date.now(); // 방금 접속 = 활동으로 간주(유휴 타이머 리셋)
+    room.emptyAt = null;              // 사람이 접속했으니 빈 방 기준 해제
     await this.save(room);
+    // 라운드 종료·유휴·빈 방 정리를 위한 알람을 상태에 맞게 다시 건다.
+    await this.scheduleAlarm(room);
     server.send(JSON.stringify({ type: "welcome", playerId: member.id, room: this.publicRoom(room) }));
     this.broadcast(room, { type: "presence", playerId: member.id, connected: true }, server);
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /* 상태에 맞는 다음 알람을 설정한다: 라운드 종료 시각 / 로비 유휴 점검 / 빈 방 삭제 중 가장 이른 것. */
+  async scheduleAlarm(room) {
+    const now = Date.now();
+    const deadlines = [];
+    if (room.status === "playing" && room.roundEndsAt) deadlines.push(room.roundEndsAt);
+    if (room.status === "lobby" && room.members.some((m) => !m.bot)) deadlines.push(now + IDLE_CHECK_INTERVAL_MS);
+    if (room.emptyAt) deadlines.push(room.emptyAt + EMPTY_ROOM_GRACE_MS);
+    if (!deadlines.length) { await this.ctx.storage.deleteAlarm(); return; }
+    await this.ctx.storage.setAlarm(Math.min(...deadlines));
   }
 
   broadcast(room, payload = null, except = null) {
@@ -365,6 +393,7 @@ export class GameRoom extends DurableObject {
     if (data.type === "shot") return this.handleShot(room, member, data, ws);
     if (data.type === "leave") return this.handleLeave(room, member, ws);
     if (data.type !== "action" || room.status !== "lobby") return;
+    member.lastActiveAt = Date.now(); // 로비 동작 = 활동(유휴 타이머 리셋)
     const changed = this.handleLobbyAction(room, member, data);
     if (!changed) return;
     await this.save(room);
@@ -372,6 +401,8 @@ export class GameRoom extends DurableObject {
     if (data.action === "start" && room.status === "playing") {
       this.broadcast(room, { type: "start", room: this.publicRoom(room) });
     }
+    // 상태가 바뀌었을 수 있으니 알람(라운드 종료/유휴) 재설정.
+    await this.scheduleAlarm(room);
   }
 
   handleLobbyAction(room, member, data) {
@@ -421,6 +452,8 @@ export class GameRoom extends DurableObject {
       if (room.members.length < 2 || teams.size < 2 || !room.members.filter((m) => m.id !== room.hostId).every((m) => m.ready)) return false;
       room.status = "playing";
       room.winner = null;
+      room.playStartedAt = Date.now(); // 게임 시작 전환 구간 기준
+      room.roundEndsAt = Date.now() + ROUND_DURATION_MS; // 제한 시간 종료 시각
       const teamOffsets = { A: 0, B: 0 };
       for (const player of room.members) {
         const offset = (teamOffsets[player.team]++ - 1) * 85;
@@ -525,8 +558,11 @@ export class GameRoom extends DurableObject {
       return;
     }
     if (member.id === room.hostId) room.hostId = room.members.find((m) => !m.bot).id;
+    if (!room.members.some((m) => !m.bot && m.connected)) room.emptyAt = room.emptyAt || Date.now();
+    else room.emptyAt = null;
     await this.save(room);
     this.broadcast(room);
+    await this.scheduleAlarm(room);
     try { ws.close(1000, "left"); } catch { /* 이미 닫힘 */ }
   }
 
@@ -537,7 +573,8 @@ export class GameRoom extends DurableObject {
     const target = room.members.find((m) => m.id === data.targetId);
     if (!target?.alive || target.team === attacker.team) return;
     const dx = attacker.x - target.x; const dy = attacker.y - target.y;
-    if (dx * dx + dy * dy > 1600 * 1600) return;
+    // 맵 대각선(약 3200)보다 넉넉히 — 원거리 저격/레일건이 부당하게 무효화되지 않게.
+    if (dx * dx + dy * dy > 3600 * 3600) return;
     const now = Date.now();
     // 같은 순간에 몰려오는 여러 히트(샷건 펠릿, 근접 다중 타격)는 버스트로 묶어 허용한다.
     if (attacker.lastHitAt && now - attacker.lastHitAt < 35) {
@@ -570,19 +607,44 @@ export class GameRoom extends DurableObject {
     attacker.damage = (attacker.damage || 0) + dealt;
     if (!target.alive) attacker.kills = (attacker.kills || 0) + 1;
     const slowed = attacker.characterId === "frog";
-    const aliveTeams = new Set(room.members.filter((m) => m.alive).map((m) => m.team));
-    if (aliveTeams.size <= 1) {
-      room.status = "finished";
-      room.winner = [...aliveTeams][0] || null;
-    }
-    if (room.status === "finished") await this.save(room);
-    else await this.persistRealtime(room);
+    await this.persistRealtime(room);
+    // 클라 라이브 전적이 맞도록 실제 깎인 피해(dealt)를 보낸다.
     this.broadcast(room, {
       type: "hit", attackerId: attacker.id, targetId: target.id,
-      damage, hp: target.hp, alive: target.alive, slowed,
+      damage: dealt, hp: target.hp, alive: target.alive, slowed,
       sourceX: attacker.x, sourceY: attacker.y,
     });
-    if (room.status === "finished") this.broadcast(room, { type: "finish", winner: room.winner, room: this.publicRoom(room) });
+    await this.checkFinish(room);
+  }
+
+  /* 한 팀만 생존하면 게임을 종료하고 모두에게 알린다. 여러 경로(피격·이탈)에서 재사용. */
+  async checkFinish(room) {
+    if (room.status !== "playing") return false;
+    const aliveTeams = new Set(room.members.filter((m) => m.alive).map((m) => m.team));
+    if (aliveTeams.size > 1) return false;
+    room.status = "finished";
+    room.winner = [...aliveTeams][0] || null;
+    await this.save(room);
+    this.broadcast(room, { type: "finish", winner: room.winner, room: this.publicRoom(room) });
+    return true;
+  }
+
+  /* 제한 시간 종료 시: 팀 킬 합 → 딜량 합 순으로 승자를 정하고 종료한다(동점이면 무승부). */
+  async finishByScore(room) {
+    if (room.status !== "playing") return false;
+    const teamStat = (team) => room.members
+      .filter((m) => m.team === team)
+      .reduce((sum, m) => ({ kills: sum.kills + (m.kills || 0), damage: sum.damage + (m.damage || 0) }), { kills: 0, damage: 0 });
+    const a = teamStat("A");
+    const b = teamStat("B");
+    let winner = null;
+    if (a.kills !== b.kills) winner = a.kills > b.kills ? "A" : "B";
+    else if (a.damage !== b.damage) winner = a.damage > b.damage ? "A" : "B";
+    room.status = "finished";
+    room.winner = winner;
+    await this.save(room);
+    this.broadcast(room, { type: "finish", winner, room: this.publicRoom(room) });
+    return true;
   }
 
   /* 스나이퍼 투망(둔화)·덫(포박) — 대상 이동 제어를 상대 화면에 전파한다.
@@ -593,19 +655,64 @@ export class GameRoom extends DurableObject {
     const target = room.members.find((m) => m.id === data.targetId);
     if (!target?.alive || target.team === attacker.team) return;
     const dx = attacker.x - target.x; const dy = attacker.y - target.y;
-    if (dx * dx + dy * dy > 1600 * 1600) return;
+    if (dx * dx + dy * dy > 3600 * 3600) return;
     const mult = Math.max(0, Math.min(1, Number(data.mult)));
     const ms = Math.max(200, Math.min(3000, Number(data.ms) || 1000));
     this.broadcast(room, { type: "snare", targetId: target.id, mult, ms });
   }
 
-  /* 유예 시간이 지난 뒤에도 사람이 없으면 방을 지운다. */
+  /* 알람: 라운드 시간 종료 / 로비 유휴 강제 퇴장 / 빈 방 삭제 를 처리하고 다음 알람을 재설정한다. */
   async alarm() {
     const room = await this.load();
     if (!room) return;
-    if (room.members.some((member) => !member.bot && member.connected)) return;
-    await this.ctx.storage.delete("room");
-    await this.updateDirectory(room, true);
+    const now = Date.now();
+
+    // 1) 라운드 제한 시간 종료 → 점수로 승자 결정 후 종료.
+    if (room.status === "playing" && room.roundEndsAt && now >= room.roundEndsAt) {
+      await this.finishByScore(room);
+      await this.scheduleAlarm(room);
+      return;
+    }
+
+    // 2) 로비에서 5분 이상 아무 동작 없는 사람은 강제 퇴장.
+    let changed = false;
+    if (room.status === "lobby") {
+      const kicked = room.members.filter((m) => !m.bot && m.lastActiveAt && now - m.lastActiveAt >= IDLE_LIMIT_MS);
+      if (kicked.length) {
+        const kickedIds = new Set(kicked.map((m) => m.id));
+        room.members = room.members.filter((m) => !kickedIds.has(m.id));
+        if (kickedIds.has(room.hostId)) room.hostId = room.members.find((m) => !m.bot)?.id || room.hostId;
+        for (const k of kicked) {
+          for (const socket of this.ctx.getWebSockets(`player:${k.id}`)) {
+            try { socket.close(4004, "idle"); } catch { /* 이미 닫힘 */ }
+          }
+        }
+        changed = true;
+      }
+    }
+
+    // 3) 사람이 하나도 없으면(봇만 남음) 방을 지운다.
+    if (!room.members.some((m) => !m.bot)) {
+      await this.ctx.storage.delete("room");
+      await this.updateDirectory(room, true);
+      return;
+    }
+
+    // 4) 접속한 사람이 없고 유예가 지났으면 방을 지운다.
+    if (!room.members.some((m) => !m.bot && m.connected)) {
+      room.emptyAt = room.emptyAt || now;
+      if (now - room.emptyAt >= EMPTY_ROOM_GRACE_MS) {
+        await this.ctx.storage.delete("room");
+        await this.updateDirectory(room, true);
+        return;
+      }
+    } else {
+      room.emptyAt = null;
+    }
+
+    if (changed) { await this.save(room); this.broadcast(room); }
+    else await this.save(room);
+    await this.scheduleAlarm(room);
   }
 
   async webSocketClose(ws) {
@@ -622,27 +729,32 @@ export class GameRoom extends DurableObject {
     const member = room?.members.find((m) => m.id === attachment?.playerId);
     if (!member) return;
     member.connected = false;
-    if (room.status === "lobby") {
+    // 게임 종료 직후 방으로 복귀하는 전환 구간에는 소켓이 잠깐 끊긴다.
+    // 이 구간에는 로비 상태여도 멤버를 지우지 않는다(강제 퇴장/방인증 오류 방지).
+    const transitioning = room.reopenedAt && Date.now() - room.reopenedAt < TRANSITION_GRACE_MS;
+    if (room.status === "lobby" && !transitioning) {
       const wasHost = member.id === room.hostId;
       room.members = room.members.filter((m) => m.id !== member.id);
       // 방장이 나가면 사람에게만 넘긴다. 봇은 방장이 될 수 없다.
       if (wasHost) room.hostId = room.members.find((m) => !m.bot)?.id || room.hostId;
-      // 봇만 남은 방은 빈 방이다.
-      if (!room.members.some((m) => !m.bot)) {
-        await this.ctx.storage.delete("room");
-        await this.updateDirectory(room, true);
-        return;
-      }
-    } else if (room.members.every((m) => m.bot || !m.connected)) {
-      /* 게임 중·게임 후에는 잠깐 끊긴 사람을 바로 내보내지 않는다(재접속 여지).
-         전원이 끊기면 빈 방이지만, 방 화면 → 게임 화면으로 넘어가는 순간에도
-         잠깐 전원이 끊긴 것처럼 보인다. 바로 지우면 그 틈에 방이 사라진다.
-         그래서 알람을 걸어 두고, 유예 시간이 지나도 아무도 없으면 지운다. */
-      await this.save(room);
-      await this.ctx.storage.setAlarm(Date.now() + EMPTY_ROOM_GRACE_MS);
+    } else if (room.status === "playing" && !member.bot
+      && room.playStartedAt && Date.now() - room.playStartedAt > START_GRACE_MS) {
+      /* 게임이 충분히 진행된 뒤(시작 전환 구간 이후)의 사람 이탈은 전투 불능으로 처리한다.
+         그래야 상대가 나가버려 종료 판정이 안 나고 무한 진행되는 상황을 막는다. */
+      member.alive = false;
+      if (await this.checkFinish(room)) return; // 종료됐으면 save+broadcast 완료
+    }
+    // 사람이 하나도 없으면(봇만 남음) 방을 즉시 지운다.
+    if (!room.members.some((m) => !m.bot)) {
+      await this.ctx.storage.delete("room");
+      await this.updateDirectory(room, true);
       return;
     }
+    // 접속한 사람이 없으면 빈 방 삭제 기준 시각을 기록한다(유예 후 알람이 지운다).
+    if (!room.members.some((m) => !m.bot && m.connected)) room.emptyAt = room.emptyAt || Date.now();
+    else room.emptyAt = null;
     await this.save(room);
     this.broadcast(room);
+    await this.scheduleAlarm(room);
   }
 }

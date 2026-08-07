@@ -173,7 +173,11 @@ function handleMessage(message) {
 }
 
 document.querySelectorAll(".team-join").forEach((button) => button.addEventListener("click", () => sendAction(socket, "team", button.dataset.team)));
-el("leave").addEventListener("click", () => { socket?.close(1000, "leave"); clearSession(); location.href = "rooms.html"; });
+el("leave").addEventListener("click", () => {
+  // 명시적 퇴장 — 전환 유예와 무관하게 즉시 방에서 빠진다(슬롯 즉시 반납).
+  try { socket?.send(JSON.stringify({ type: "leave" })); } catch { /* 소켓 없음 */ }
+  socket?.close(1000, "leave"); clearSession(); location.href = "rooms.html";
+});
 el("action-button").addEventListener("click", () => {
   if (isHost()) { if (canStart()) sendAction(socket, "start"); }
   else sendAction(socket, "ready", !mine()?.ready);
@@ -253,7 +257,11 @@ try {
   render();
   socket = connectRoom(roomId, {
     message: handleMessage,
-    close: (event) => { if (event.code === 4003) { clearSession(); alert("방장에 의해 퇴장되었습니다."); location.replace("rooms.html"); } else if (!location.pathname.endsWith("game.html")) toast("실시간 서버 연결이 끊겼습니다.", 4000); },
+    close: (event) => {
+      if (event.code === 4003) { clearSession(); alert("방장에 의해 퇴장되었습니다."); location.replace("rooms.html"); }
+      else if (event.code === 4004) { clearSession(); alert("5분 동안 활동이 없어 방에서 나가졌습니다."); location.replace("rooms.html"); }
+      else if (!location.pathname.endsWith("game.html")) toast("실시간 서버 연결이 끊겼습니다.", 4000);
+    },
     error: () => toast("실시간 서버 연결에 실패했습니다.", 4000),
   });
 } catch (error) {

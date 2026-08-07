@@ -341,3 +341,41 @@
   .skill-slot{width:44px;height:44px}
   .skill-slot .skill-cd-text{font-size:13px}
 }
+
+/* ---------- HUD 확대 & 재배치: 캐릭터명(체력바 위)·체력바·스킬칸·스킬명·맵이름 ---------- */
+/* 좌측 하단: 캐릭터 이름을 체력바 위로. 색은 renderUi 가 인라인으로 병과색을 준다. */
+.health-block{width:min(330px,34vw)}
+.health-block .operator-name{
+  display:block;margin-bottom:9px;
+  font-size:18px;font-weight:900;letter-spacing:.05em;line-height:1;
+  text-shadow:0 2px 12px rgba(0,0,0,.75);
+}
+.health-block .label-row{font-size:11px;letter-spacing:.16em;margin-bottom:9px}
+.health-block .bar{height:9px}
+#health-text{font-size:14px}
+
+/* 스킬 슬롯 확대 + 슬롯 아래 스킬 이름 */
+.skill-slots{gap:18px;margin-top:14px}
+.skill-col{display:flex;flex-direction:column;align-items:center;gap:7px}
+.skill-slot{width:66px;height:66px}
+.skill-slot .skill-key{font-size:9px}
+.skill-slot .skill-cd-text{font-size:19px;min-height:19px}
+.skill-slot .skill-count{font-size:13px}
+.skill-name{
+  max-width:88px;text-align:center;
+  color:#d3e3e7;font-size:12px;font-weight:800;letter-spacing:.03em;line-height:1.15;
+  text-shadow:0 1px 5px rgba(0,0,0,.85);
+}
+
+/* 오른쪽 위: 맵 이름만 크게 */
+.tactical-panel #map-layout{color:var(--cyan);font-size:16px;letter-spacing:.1em}
+
+@media(max-width:620px){
+  .health-block{width:42vw}
+  .health-block .operator-name{font-size:14px}
+  .skill-slots{gap:12px}
+  .skill-slot{width:50px;height:50px}
+  .skill-slot .skill-cd-text{font-size:15px}
+  .skill-name{font-size:10px;max-width:66px}
+  .tactical-panel #map-layout{font-size:13px}
+}

@@ -306,6 +306,22 @@
       }
     };
 
+    /* 상단 인원 표시용 팀 카운트 — 아군(사람)은 game.bots 에 없어 누락되므로,
+       서버 기준 전체 로스터(room.members)를 팀·생존 기준으로 센다. */
+    game.getTeamCounts = () => {
+      if (!active || !room?.members?.length) return null;
+      const myTeam = findMember(playerId)?.team;
+      if (!myTeam) return null;
+      let ally = 0;
+      let enemy = 0;
+      for (const member of room.members) {
+        if (member.alive === false) continue;
+        if (member.team === myTeam) ally += 1;
+        else enemy += 1;
+      }
+      return { ally, enemy };
+    };
+
     const originalStep = game.step.bind(game);
     game.step = function networkStep(dt) {
       if (active) syncRemoteActors(dt);
@@ -494,6 +510,27 @@
     while (markers.length > points.length) disposeMarker(markers.pop());
     points.forEach((point, index) => markers[index].position.set(point[xIndex], point[yIndex], 24));
     entry[key] = markers;
+  };
+
+  /* 덫 위험 구역 링(반경 radius)을 선명한 선으로 그린다. 덫은 정적이라 위치가
+     바뀔 때만 재배치하면 된다. 색/투명도는 visibility 단계에서 팀별로 준다. */
+  const TRAP_RING_SEGMENTS = 20;
+  const syncTrapRings = (entry, points) => {
+    const rings = entry.trapRings || [];
+    const need = points.length * TRAP_RING_SEGMENTS;
+    while (rings.length < need) rings.push(stripMesh(B.operators.sniper.trap.color, 0.4));
+    while (rings.length > need) disposeStrip(rings.pop());
+    const radius = B.operators.sniper.trap.radius;
+    points.forEach((point, trapIndex) => {
+      for (let seg = 0; seg < TRAP_RING_SEGMENTS; seg++) {
+        const angleA = seg / TRAP_RING_SEGMENTS * Math.PI * 2;
+        const angleB = (seg + 1) / TRAP_RING_SEGMENTS * Math.PI * 2;
+        placeStrip(rings[trapIndex * TRAP_RING_SEGMENTS + seg],
+          { x: point[0] + Math.cos(angleA) * radius, y: point[1] + Math.sin(angleA) * radius },
+          { x: point[0] + Math.cos(angleB) * radius, y: point[1] + Math.sin(angleB) * radius }, 3);
+      }
+    });
+    entry.trapRings = rings;
   };
 
   const detonateRemoteGrenade = (actor, grenade) => {
@@ -867,10 +904,10 @@
       if (entry.dashGhosts) entry.dashGhosts.forEach(disposeStrip);
       for (const strip of [
         ...(entry.barrier || []), ...(entry.railCharge || []),
-        ...(entry.revealRings || []),
+        ...(entry.revealRings || []), ...(entry.trapRings || []),
         ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
       ]) disposeStrip(strip);
-      for (const marker of [entry.dash, entry.reveal, entry.landing, entry.gunKataPulse, entry.net, ...(entry.summons || []), ...(entry.traps || [])]) {
+      for (const marker of [entry.dash, entry.reveal, entry.landing, entry.gunKataPulse, entry.net, ...(entry.summons || []), ...(entry.traps || []), ...(entry.trapZones || [])]) {
         disposeMarker(marker);
       }
       const actor = actors.get(id);
@@ -993,16 +1030,29 @@ function syncRemoteFxVisibility() {
     ]) setRemoteEffectVisible(actor, effect);
     // Reaper summons are deliberate global information and ignore fog of war.
     for (const summon of entry.summons || []) setRemoteEffectVisible(actor, summon, true);
-    // 스나이퍼 덫(빨간 지뢰) — 아군·적군 모두에게 보인다(안개 무시).
-    // 아군/소유자: 반투명 식별 · 적(게스트): 빨간 깜빡임.
+    // 스나이퍼 덫(반투명 깜빡이는 지뢰) — 아군·적군 모두에게 보인다(안개 무시).
+    // 아군: 연한 빨강(흐릿) 깜빡임 · 적(게스트): 선명한 빨강 깜빡임.
+    const trapCfgV = B.operators.sniper.trap;
     const trapAlly = actor.team === game.player.team;
-    const blink = 0.3 + Math.abs(Math.sin(performance.now() / 170)) * 0.65;
-    for (const trap of entry.traps || []) {
-      setRemoteEffectVisible(actor, trap, true);
-      trap.material.color.setHex(B.operators.sniper.trap.color);
-      trap.material.transparent = true;
-      trap.material.opacity = trapAlly ? 0.4 : blink;
-      trap.scale.setScalar(trapAlly ? 1.1 : 1.1 + Math.abs(Math.sin(performance.now() / 170)) * 0.25);
+    const trapColor = trapAlly ? trapCfgV.allyColor : trapCfgV.color;
+    const blink = 0.06 + Math.abs(Math.sin(performance.now() / 200)) * 0.14; // 0.06~0.20 깜빡임
+    for (const zone of entry.trapZones || []) {
+      setRemoteEffectVisible(actor, zone, true);
+      zone.material.color.setHex(trapColor);
+      zone.material.transparent = true;
+      zone.material.opacity = trapAlly ? blink * 0.7 : blink;
+    }
+    for (const body of entry.traps || []) {
+      setRemoteEffectVisible(actor, body, true);
+      body.material.color.setHex(trapColor);
+      body.material.transparent = true;
+      body.material.opacity = blink;
+    }
+    // 위험 구역 링 — 경계선도 함께 깜빡인다.
+    for (const ring of entry.trapRings || []) {
+      setRemoteEffectVisible(actor, ring, true);
+      ring.material.color.setHex(trapColor);
+      ring.material.opacity = (trapAlly ? 0.5 : 0.7) * (0.3 + Math.abs(Math.sin(performance.now() / 200)) * 0.7);
     }
     for (const grenade of entry.grenades?.values?.() || []) {
       const visible = isEffectVisibleAt(actor, grenade.mesh.position);
@@ -1097,8 +1147,12 @@ function syncRemoteFxVisibility() {
       entry.scythe = null;
     }
 
-    // 스나이퍼 덫 — 아군·적군 모두에게 보이는 마커
-    syncPointMarkers(entry, "traps", fx?.T || [], B.operators.sniper.trap.color, 1.1, 0, 1);
+    // 스나이퍼 덫(반투명 지뢰) — 아군·적군 모두에게 보인다.
+    // 위험 구역 디스크(보이는 크기 = radius) + 지뢰 본체 점. 색/투명도는 팀별로 아래 visibility 에서 준다.
+    const trapCfg = B.operators.sniper.trap;
+    syncPointMarkers(entry, "trapZones", fx?.T || [], trapCfg.color, trapCfg.radius / B.player.radius, 0, 1);
+    syncPointMarkers(entry, "traps", fx?.T || [], trapCfg.color, 0.6, 0, 1);
+    syncTrapRings(entry, fx?.T || []);
 
     // 소환수 — 크고 밝은 마커 + 펄스
     syncPointMarkers(entry, "summons", fx?.u || [], 0xd5dde2, 0.95, 1, 2);
@@ -1174,6 +1228,17 @@ function syncRemoteFxVisibility() {
     if (message.type === "hit") {
       const actor = actors.get(message.targetId);
       if (actor) { actor.hp = message.hp; actor.alive = message.alive; actor.mesh.visible = message.alive; }
+      // 라이브 전적(딜량·킬) 갱신 — 결과창/관전 요약이 실시간으로 맞도록.
+      if (room?.members) {
+        const attackerMember = room.members.find((m) => m.id === message.attackerId);
+        if (attackerMember) {
+          attackerMember.damage = (attackerMember.damage || 0) + (Number(message.damage) || 0);
+          attackerMember.hits = (attackerMember.hits || 0) + 1;
+          if (message.alive === false) attackerMember.kills = (attackerMember.kills || 0) + 1;
+        }
+        const targetMember = room.members.find((m) => m.id === message.targetId);
+        if (targetMember) { targetMember.hp = message.hp; targetMember.alive = message.alive; }
+      }
       if (message.targetId === playerId && game) {
         game.showDamageDirection?.({ x: message.sourceX, y: message.sourceY });
         game.player.hp = message.hp; game.player.alive = message.alive;

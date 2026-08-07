@@ -34,6 +34,7 @@
         </div>
         <div class="hud-bottom">
           <div class="health-block">
+            <strong class="operator-name" id="operator-status">SOLDIER // 군인</strong>
             <div class="label-row"><span>VITALS</span><span id="health-text">100 / 100</span></div>
             <div class="bar"><i id="health-bar"></i></div>
           </div>
@@ -43,17 +44,23 @@
             <div class="reload-hint" id="reload-hint">R TO RELOAD</div>
             <div id="reload-progress" class="reload-progress" role="progressbar" aria-label="재장전 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="reload-progress-bar"></i></div>
             <div class="skill-slots">
-              <div class="skill-slot" id="skill-slot-1" data-slot="secondary">
-                <i class="skill-cd-fill"></i>
-                <span class="skill-key">RMB</span>
-                <span class="skill-cd-text"></span>
-                <strong class="skill-count hidden"></strong>
+              <div class="skill-col">
+                <div class="skill-slot" id="skill-slot-1" data-slot="secondary">
+                  <i class="skill-cd-fill"></i>
+                  <span class="skill-key">RMB</span>
+                  <span class="skill-cd-text"></span>
+                  <strong class="skill-count hidden"></strong>
+                </div>
+                <span class="skill-name" id="skill-name-1"></span>
               </div>
-              <div class="skill-slot" id="skill-slot-2" data-slot="ability">
-                <i class="skill-cd-fill"></i>
-                <span class="skill-key">SPACE</span>
-                <span class="skill-cd-text"></span>
-                <strong class="skill-count hidden"></strong>
+              <div class="skill-col">
+                <div class="skill-slot" id="skill-slot-2" data-slot="ability">
+                  <i class="skill-cd-fill"></i>
+                  <span class="skill-key">SPACE</span>
+                  <span class="skill-cd-text"></span>
+                  <strong class="skill-count hidden"></strong>
+                </div>
+                <span class="skill-name" id="skill-name-2"></span>
               </div>
             </div>
           </div>
@@ -65,7 +72,9 @@
           </div>
         </div>
         <div id="status-message" class="status-message"></div>
-        <div class="tactical-panel"><strong id="operator-status">SOLDIER // 군인</strong><span id="ability-status">RMB — · SPACE —</span><strong id="map-layout">LAYOUT // CROSSROADS</strong><span id="zoom-status">VIEW 1.25×</span><span id="barrier-status" class="barrier-status hidden"></span><span id="flash-status" class="flash-status"></span><span id="smoke-status" class="smoke-status" aria-live="polite"></span></div>
+        <!-- 오른쪽 위: 맵 이름만 크게. 캐릭터 이름은 좌측 하단 체력바 위로 이동, 스킬 이름은 슬롯 아래로 이동.
+             ability/zoom 텍스트는 다른 스크립트가 참조하므로 숨겨서 남긴다. -->
+        <div class="tactical-panel"><strong id="map-layout">LAYOUT // CROSSROADS</strong><span id="ability-status" class="hidden">RMB — · SPACE —</span><span id="zoom-status" class="hidden">VIEW 1.25×</span><span id="barrier-status" class="barrier-status hidden"></span><span id="flash-status" class="flash-status"></span><span id="smoke-status" class="smoke-status" aria-live="polite"></span></div>
         <div id="debug" class="debug hidden"></div>
       </div>
 

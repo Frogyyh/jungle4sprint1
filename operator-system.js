@@ -70,6 +70,8 @@
       enemyCount: document.querySelector("#team-enemy-count"),
       slot1: document.querySelector("#skill-slot-1"),
       slot2: document.querySelector("#skill-slot-2"),
+      skillName1: document.querySelector("#skill-name-1"),
+      skillName2: document.querySelector("#skill-name-2"),
     };
 
     /* 스킬 슬롯 쿨타임 총 길이(초). 회색 오버레이 비율 계산에 쓴다. balance.js 를 단일 원본으로 읽는다.
@@ -1443,10 +1445,10 @@
     };
 
     const TRAP = B.operators.sniper.trap;
-    // 빨간 지뢰 스타일. 소유자(스나이퍼) 화면에서는 반투명으로 식별된다.
-    // 각 메시는 userData.baseOpacity 를 들고, updateTraps 가 은은하게 맥동시킨다.
-    const addTrapMesh = (meshes, pos, scale, opacity, z) => {
-      const mesh = createEffectMesh(TRAP.color, scale);
+    // 반투명 빨간 지뢰. 소유자 화면에서는 연한 빨강(allyColor)으로 본다.
+    // 본체·스파이크는 반투명(알파 0.10~0.20), 위험 구역 링(radius)은 얇은 선으로 표시한다.
+    const addTrapMesh = (meshes, pos, scale, opacity, z, color = TRAP.allyColor) => {
+      const mesh = createEffectMesh(color, scale);
       mesh.material.opacity = opacity;
       mesh.material.depthWrite = false;
       mesh.userData.baseOpacity = opacity;
@@ -1457,16 +1459,11 @@
     };
     const makeTrapVisual = (pos) => {
       const meshes = [];
-      // 지뢰 몸체 + 스파이크
-      addTrapMesh(meshes, pos, 0.6, 0.5, 22);
+      // 반투명 지뢰 몸체 + 스파이크 (플레이어 크기, 소유자=아군색·연한 빨강). 깜빡임은 updateTraps.
+      addTrapMesh(meshes, pos, 0.55, 0.18, 24);
       for (let index = 0; index < 8; index++) {
         const angle = index / 8 * Math.PI * 2;
-        addTrapMesh(meshes, vector(pos.x + Math.cos(angle) * 26, pos.y + Math.sin(angle) * 26), 0.16, 0.5, 22);
-      }
-      // 발동 범위 링 (반경 TRAP.radius)
-      for (let index = 0; index < 20; index++) {
-        const angle = index / 20 * Math.PI * 2;
-        addTrapMesh(meshes, vector(pos.x + Math.cos(angle) * TRAP.radius, pos.y + Math.sin(angle) * TRAP.radius), 0.12, 0.24, 20);
+        addTrapMesh(meshes, vector(pos.x + Math.cos(angle) * 15, pos.y + Math.sin(angle) * 15), 0.16, 0.16, 24);
       }
       return meshes;
     };
@@ -1475,6 +1472,18 @@
         mesh.parent?.remove(mesh);
         mesh.geometry?.dispose?.();
         mesh.material?.dispose?.();
+      }
+    };
+    // 트랩/미리보기의 발동 범위 링 — createWorldStrip 로 그려 확실히 보이게 한다.
+    const drawTrapRing = (center, radius, color, width, opacity, duration, segments = 24) => {
+      for (let index = 0; index < segments; index++) {
+        const angleA = index / segments * Math.PI * 2;
+        const angleB = (index + 1) / segments * Math.PI * 2;
+        createWorldStrip(
+          vector(center.x + Math.cos(angleA) * radius, center.y + Math.sin(angleA) * radius),
+          vector(center.x + Math.cos(angleB) * radius, center.y + Math.sin(angleB) * radius),
+          width, color, { duration, opacity },
+        );
       }
     };
     // SPACE: 설치 모드 진입/취소 (토글). 진입하면 발밑에 설치 가능 범위가 뜬다.
@@ -1495,64 +1504,46 @@
       game.player.trapCount--;
       game._traps.push({ pos, meshes: makeTrapVisual(pos), armedAt: game.now + TRAP.armDelay });
       game._trapPlacing = false;
+      // 설치 확인 플래시 — 발동 범위를 크게 보여준다.
+      drawTrapRing(pos, TRAP.radius, TRAP.color, 5, 0.9, 0.5, 28);
+      createPulseDisc({ pos: pos.clone() }, 40, TRAP.color, 0.4, 0.3);
       game.showToast(`TRAP SET // ${game.player.trapCount} LEFT`);
     };
-    // 설치 모드 미리보기: 범위 원 + 조준 마커 (소유자 화면)
-    const disposeTrapPreview = () => {
-      const preview = game._trapPreview;
-      if (!preview) return;
-      for (const mesh of [preview.area, preview.marker]) {
-        mesh.parent?.remove(mesh);
-        mesh.geometry?.dispose?.();
-        mesh.material?.dispose?.();
-      }
-      game._trapPreview = null;
-    };
+    // 설치 모드 미리보기: 빨간 설치 가능 범위 링 + 조준 마커 (createWorldStrip 로 매 프레임 그린다).
     const updateTrapPlacement = () => {
-      if (!isOperator("sniper") || !game._trapPlacing || !game.player.alive || game.phase !== "playing") {
-        disposeTrapPreview();
-        return;
-      }
-      if (!game._trapPreview) {
-        // 설치 가능 범위 — 빨간 원
-        const area = createEffectMesh(TRAP.color, TRAP.placeRange / Math.max(1, game.player.radius));
-        area.material.opacity = 0.14;
-        area.material.depthWrite = false;
-        const marker = createEffectMesh(TRAP.color, 0.5);
-        marker.material.opacity = 0.6;
-        marker.material.depthWrite = false;
-        game.fxGroup.add(area);
-        game.fxGroup.add(marker);
-        game._trapPreview = { area, marker };
-      }
-      const preview = game._trapPreview;
-      preview.area.position.set(game.player.pos.x, game.player.pos.y, 13);
-      preview.area.material.opacity = 0.12 + Math.sin(game.now * 4) * 0.04; // 빨간 범위 은은한 맥동
-      const toTarget = game.mouse.world.clone().sub(game.player.pos);
+      if (!isOperator("sniper") || !game._trapPlacing || !game.player.alive || game.phase !== "playing") return;
+      const origin = game.player.pos;
+      // 설치 가능 범위(빨간 원)
+      drawTrapRing(origin, TRAP.placeRange, TRAP.color, 4, 0.7, 0.05, 24);
+      // 조준 마커 — 범위 밖이면 경계로 당긴다. 벽 위면 회색(설치 불가).
+      const toTarget = game.mouse.world.clone().sub(origin);
       const distance = toTarget.length();
       const pos = distance <= TRAP.placeRange
         ? game.mouse.world.clone()
-        : game.player.pos.clone().add(toTarget.normalize().multiplyScalar(TRAP.placeRange));
-      const blocked = game.collides(pos, 10);
-      preview.marker.position.set(pos.x, pos.y, 22);
-      preview.marker.material.color.setHex(blocked ? 0x777777 : TRAP.color); // 벽 위면 회색(설치 불가)
+        : origin.clone().add(toTarget.normalize().multiplyScalar(TRAP.placeRange));
+      const markerColor = game.collides(pos, 10) ? 0x888888 : TRAP.color;
+      drawTrapRing(pos, 13, markerColor, 3, 0.95, 0.05, 10);
+      createWorldStrip(vector(pos.x - 9, pos.y), vector(pos.x + 9, pos.y), 3, markerColor, { duration: 0.05, opacity: 0.95 });
+      createWorldStrip(vector(pos.x, pos.y - 9), vector(pos.x, pos.y + 9), 3, markerColor, { duration: 0.05, opacity: 0.95 });
     };
     const updateTraps = () => {
       if (!game._traps.length) return;
       for (let index = game._traps.length - 1; index >= 0; index--) {
         const trap = game._traps[index];
-        // 반투명 식별 — 은은한 맥동(깜빡임 아님)
-        const pulse = 0.8 + Math.sin(game.now * 4 + index) * 0.2;
-        for (const mesh of trap.meshes) mesh.material.opacity = (mesh.userData.baseOpacity || 0.4) * pulse;
+        // 깜빡임 — 알파 0.06~0.20 사이를 오간다.
+        const blink = 0.06 + Math.abs(Math.sin(game.now * 6 + index)) * 0.14;
+        for (const mesh of trap.meshes) mesh.material.opacity = blink;
         if (game.now < trap.armedAt) continue;
         for (const bot of game.bots) {
           if (!bot.alive || bot.team === game.player.team) continue;
-          if (bot.pos.distanceTo(trap.pos) > TRAP.radius + bot.radius) continue;
-          game.applyControlEffect(bot, 0.05, TRAP.rootDuration);
+          // 실제 발동은 보이는 범위(radius)보다 약간 넓은 triggerRadius — 살짝만 걸쳐도 작동.
+          if (bot.pos.distanceTo(trap.pos) > TRAP.triggerRadius + bot.radius) continue;
+          game.applyControlEffect(bot, 0.05, TRAP.rootDuration); // 1초 포박
+          game.damageActor(game.player, bot, TRAP.damage);        // 약한 피해
           for (let burst = 0; burst < 12; burst++) {
             const angle = burst / 12 * Math.PI * 2;
             const dir = vector(Math.cos(angle), Math.sin(angle));
-            createWorldStrip(trap.pos.clone(), trap.pos.clone().add(dir.multiplyScalar(TRAP.radius)), 3.5, TRAP.color, { duration: 0.26, opacity: 0.9 });
+            createWorldStrip(trap.pos.clone(), trap.pos.clone().add(dir.multiplyScalar(44)), 3.5, TRAP.color, { duration: 0.26, opacity: 0.9 });
           }
           createPulseDisc(bot, 44, TRAP.color, 0.5, 0.24);
           disposeTrap(trap);
@@ -2823,15 +2814,28 @@
       ui.ability.textContent = `RMB ${secondary}${secondaryStatus} · SPACE ${ability}${abilityStatus}`;
       ui.ability.classList.toggle("ability-cooldown", cooldown > 0);
       ui.ability.classList.toggle("ability-ready", cooldown <= 0);
+      // 스킬 슬롯 아래 스킬 이름 라벨 (슬롯1=우클릭, 슬롯2=스페이스)
+      if (ui.skillName1) ui.skillName1.textContent = secondary === "-" ? "" : secondary;
+      if (ui.skillName2) ui.skillName2.textContent = ability === "-" ? "" : ability;
 
-      // 상단 중앙: 좌 아군 / 우 적 남은 인원. 싱글은 봇 전부가 적, 멀티는 team 으로 구분.
-      const bots = this.bots || [];
-      let allyAlive = this.player && this.player.alive !== false ? 1 : 0;
-      let enemyAlive = 0;
-      for (const bot of bots) {
-        if (!bot.alive) continue;
-        if (bot.team === "player") allyAlive += 1;
-        else enemyAlive += 1;
+      // 상단 중앙: 좌 아군 / 우 적 남은 인원.
+      // 멀티플레이에서는 아군(사람)이 game.bots 에 없어 누락되므로, 멀티 훅이 있으면
+      // 서버 기준 전체 로스터로 센다(getTeamCounts). 없으면(싱글) 로컬 봇으로 센다.
+      let allyAlive;
+      let enemyAlive;
+      const teamCounts = this.getTeamCounts?.();
+      if (teamCounts) {
+        allyAlive = teamCounts.ally;
+        enemyAlive = teamCounts.enemy;
+      } else {
+        const bots = this.bots || [];
+        allyAlive = this.player && this.player.alive !== false ? 1 : 0;
+        enemyAlive = 0;
+        for (const bot of bots) {
+          if (!bot.alive) continue;
+          if (bot.team === "player") allyAlive += 1;
+          else enemyAlive += 1;
+        }
       }
       if (ui.allyCount) ui.allyCount.textContent = String(allyAlive);
       if (ui.enemyCount) ui.enemyCount.textContent = String(enemyAlive);
