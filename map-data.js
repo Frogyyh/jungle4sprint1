@@ -1,6 +1,9 @@
 (() => {
   "use strict";
 
+  /* Breachline 맵/월드 데이터 — 전장(월드 크기, 스폰 좌표, 엄폐물, 부시·물)
+     의 단일 원본. game.html 에서 operators.js 직후에 로드되어
+     window.BREACHLINE_MAP_DATA 로 노출된다. */
   const WORLD = Object.freeze({ width: 2600, height: 1800 });
   const SPAWNS = Object.freeze({ player: [-1080, 0], enemy: [1080, 0] });
   const rect = (id, type, x, y, w, h) => Object.freeze({ id, type, x, y, w, h });

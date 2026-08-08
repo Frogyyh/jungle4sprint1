@@ -1,7 +1,10 @@
 (() => {
   "use strict";
 
-  // 병과 설명의 수치도 balance.js 단일 원본에서 끌어온다 (로비 표기와 실제 수치가 어긋나지 않게).
+  /* operators.js — 병과(직군) 정의 데이터.
+     로비(ui/room-page)와 게임(game.html)이 공유한다. 수치는
+     balance.js 단일 원본에서 끌어와 로비 표기와 실제 수치가
+     어긋나지 않게 한다. window.BREACHLINE_OPERATORS 로 노출된다. */
   const B = window.BREACHLINE_BALANCE;
 
   const operators = [

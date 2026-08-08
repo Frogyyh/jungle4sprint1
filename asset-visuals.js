@@ -1,6 +1,10 @@
 (() => {
   "use strict";
 
+  /* asset-visuals.js — 캐릭터/무기 에셋 렌더링.
+     ./Asset/processed 의 스프라이트 텍스처로 캐릭터·무기·외곽선을
+     그리고, operator-system.js 다음에 로드되어 applyWeaponVisual 을
+     실제 텍스처 기반으로 교체한다. */
   const installAssetVisuals = () => {
     const game = window.__breachline;
     const THREE = window.BREACHLINE_THREE;

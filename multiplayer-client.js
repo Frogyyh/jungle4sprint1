@@ -1,4 +1,9 @@
 (() => {
+  /* multiplayer-client.js — 실시간 멀티플레이 클라이언트.
+     URL 에 ?multiplayer=1 이 있어야 동작한다(없으면 즉시 무시).
+     서버(server/worker.mjs) WebSocket 으로 상대 위치·공격·스킬 이펙트를
+     중계하고, 방장 화면에서 돌리는 봇(AI)도 이 모듈이 대신 보고한다.
+     game.html 의 asset-visuals.js 직후에 로드된다. */
   const params = new URLSearchParams(location.search);
   if (params.get("multiplayer") !== "1") return;
 

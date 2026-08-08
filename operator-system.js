@@ -2,6 +2,13 @@
   "use strict";
 
   /* ============================================================
+   * operator-system.js — 병과(직군) 시스템 단일 진입점.
+   * 10개 병과의 선택·공격·특수능력·스킬 UI·사용자 봇과의 상호작용을
+   * 패치(patch) 방식으로 window.__breachline 에 적용한다.
+   * game.html 의 quality-pass.js 직후에 로드된다.
+   * ============================================================ */
+
+  /* ============================================================
    * frog.js 병합 — 개구리 병과 전체 로직(혀 스윙, 거품, 물방울
    * 이펙트, 부착 시야)을 operator-system.js 안의 installFrog 로
    * 단일 진입점으로 통합했다. 별도 frog.js 파일은 제거했다.
@@ -1431,6 +1438,7 @@
       return Math.hypot(halfWidth, halfHeight);
     };
 
+    /* ==================== RB-08 (레일건 / 투시) ==================== */
     const fireRailgun = () => {
       if (game._railNeedsRelease || game.player.reloadUntil > game.now || game.now < game.player.nextShotAt) return;
       if (game.player.ammo <= 0) {
@@ -1481,6 +1489,7 @@
       game.showToast(nearest ? "RAIL HIT // WALLPIERCE" : "RAIL FIRED");
     };
 
+    /* ==================== 폭탄마 (6연장 유탄) ==================== */
     const fireLauncher = () => {
       if (game.player.reloadUntil > game.now || game.now < game.player.nextShotAt) return;
       if (game.player.ammo <= 0) {
@@ -1636,6 +1645,7 @@
       return vector(x, y).normalize();
     };
 
+    /* ==================== 존 익 / 사냥꾼 / 닌자 (대쉬 계열) ==================== */
     const startDash = (kind) => {
       const key = `${kind}-dash`;
       if (!abilityReady(key)) {
@@ -1749,6 +1759,7 @@
     };
 
     // 사신 우클릭: 낫을 부메랑처럼 던진다 (벽 관통). 회수 전까지 근접 공격 불가.
+    /* ==================== 사신 (낫 투척 / 언데드 소환) ==================== */
     const useScytheThrow = () => {
       if (game._scytheThrow) {
         game.showToast("SCYTHE FLYING // RETURNING");
@@ -1980,6 +1991,7 @@
       beginCooldown("flash", B.operators.soldier.flashCooldown);
       game.throwGrenade("flash", game.player, game.mouse.world.clone());
     };
+    /* ==================== 군인 (섬광탄 / 신체강화) ==================== */
     const useEnhance = () => {
       if (!abilityReady("enhance")) { game.showToast(`ENHANCE ${cooldownRemaining("enhance").toFixed(1)}s`); return; }
       const enhance = B.operators.soldier.enhance;
@@ -2035,6 +2047,7 @@
       game._net = null;
       game.canvas.dataset.netActive = "false";
     };
+    /* ==================== 스나이퍼 (투망 / 덫) ==================== */
     const fireNet = () => {
       if (game._net) { game.showToast("NET IN FLIGHT"); return; }
       if (!abilityReady("net")) { game.showToast(`NET ${cooldownRemaining("net").toFixed(1)}s`); return; }
@@ -2262,6 +2275,7 @@
       }
       createBurstParticle(point.clone(), 0xffffff, vector(), 0.5, 0.18, 0.95);
     };
+    /* ==================== 폭탄마 (직선 폭격) ==================== */
     const fireBarrage = () => {
       if (game._barrage) return;
       if (!abilityReady("barrage")) { game.showToast(`BARRAGE ${cooldownRemaining("barrage").toFixed(1)}s`); return; }
@@ -2488,6 +2502,7 @@
       return game.player.pos.clone();
     };
 
+    /* ==================== 사신 (언데드 소환) ==================== */
     const summonUndead = () => {
       if (!abilityReady("undead")) {
         game.showToast(`UNDEAD ${cooldownRemaining("undead").toFixed(1)}s`);
@@ -2618,6 +2633,7 @@
     };
     game.damageSummon = damageSummon;
 
+    /* ==================== RB-08 (투시 스캔) ==================== */
     const REVEAL_DURATION = B.operators.sentinel.reveal.duration;
     const REVEAL_RANGE = B.operators.sentinel.reveal.range;
     const REVEAL_COOLDOWN = B.operators.sentinel.reveal.cooldown;
@@ -2655,6 +2671,7 @@
       });
     };
 
+    /* ==================== 닌자 (대쉬 / 강화 연막) ==================== */
     const useNinjaDash = () => {
       if (!abilityReady("ninja-smoke")) {
         game.showToast(`NINJA DASH ${cooldownRemaining("ninja-smoke").toFixed(1)}s`);
@@ -2683,6 +2700,7 @@
       game.showToast("NINJA DASH");
     };
 
+    /* ==================== 아이언 (섬광방패) ==================== */
     const FLASH_SHIELD_RANGE = B.operators.bulwark.flashShield.range;
     const FLASH_SHIELD_HALF_ANGLE = B.operators.bulwark.flashShield.halfAngleDeg * Math.PI / 360; // 좌우 60도 (총 120도)
     const FLASH_SHIELD_DURATION = B.operators.bulwark.flashShield.duration; // 섬광탄과 동일한 1초 시야 차단
@@ -3352,6 +3370,7 @@
       game.canvas.dataset.barrierState = "ready";
     };
 
+    /* ==================== 아이언 (방벽 전개) ==================== */
     const deployBarrier = () => {
       if (!isOperator("bulwark")) return;
       const barrier = game._barrier;

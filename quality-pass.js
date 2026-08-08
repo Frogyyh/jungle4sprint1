@@ -1,6 +1,10 @@
 (() => {
   "use strict";
 
+  /* quality-pass.js — 전역 시야/HUD/투척물 폴리시.
+     게임 전반의 시야(피아식별·원형·덤불), HUD, 수류탄·유탄 투척
+     예측과 이펙트를 game.js 코어에 패치로 적용한다.
+     game.html 에서 operator-system.js 직전에 로드된다. */
   const bootQualityPass = () => {
     const game = window.__breachline;
     if (!game) {

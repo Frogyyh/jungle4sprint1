@@ -130,6 +130,9 @@
       </div>
 
       <div id="toast" class="toast" aria-live="polite"></div>
+      <!-- 게임 시스템 패치 스크립트 — 순서가 중요하다. 각각이 이전 것을 감싸(래핑) 간다.
+           quality-pass(시야/HUD) → operator-system(병과, frog 포함) → asset-visuals(에셋)
+           → multiplayer-client(온라인) → lobby-bridge(로비 브리지, 마지막) -->
       <script src="./quality-pass.js"></script>
       <script src="./operator-system.js"></script>
       <script src="./asset-visuals.js"></script>
