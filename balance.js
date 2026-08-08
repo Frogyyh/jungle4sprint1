@@ -64,11 +64,11 @@
         reveal: { range: 920, duration: 7, cooldown: 15 },
         // 우클릭 헤비 레이저: 레일건 충전(1초)의 3배(3초)를 들여 넓은 보라색 관통 레이저를 발사한다.
         // 피해는 40 — 멀티플레이 서버의 sentinel 피해 상한과 동일하게 맞춘다.
-        heavyLaser: { chargeTime: 3, damage: 100, halfWidth: 46, cooldown: 10, color: 0xb26cff },
+        heavyLaser: { chargeTime: 3, damage: 120, halfWidth: 46, cooldown: 10, color: 0xb26cff },
       },
       soldier: {
         hp: 200,
-        weapon: { id: "rifle", name: "ASSAULT RIFLE", damage: 20, pellets: 1, rpm: 420, spreadDeg: 4.5, magSize: 30, reserve: 9999, reload: 2.5, range: 1040, projectileSpeed: 1500, color: 0x6de6df },
+        weapon: { id: "rifle", name: "ASSAULT RIFLE", damage: 12, pellets: 1, rpm: 420, spreadDeg: 4.5, magSize: 30, reserve: 9999, reload: 2.5, range: 1040, projectileSpeed: 1500, color: 0x6de6df },
         // 우클릭 섬광탄: 개수 무제한, 쿨타임 5초.
         flashCooldown: 5,
         // SPACE 신체강화: 5초간 이동속도·피해 부스트. 쿨타임 20초.
@@ -98,6 +98,7 @@
       },
       hunter: {
         hp: 200,
+        viewDegrees: 90, // 기본 시야 부채꼴 (좌우 45도) — 코어 45도 대신 넓은 시야
         weapon: { id: "shotgun", name: "DOUBLE BARREL", damage: 24, pellets: 5, rpm: 150, spreadDeg: 18, magSize: 2, reserve: 9999, reload: 2.5, range: 470, projectileSpeed: 1120, color: 0xffab63 },
         dash: { speed: 900, duration: 0.34, cooldown: 3, invulnerable: true }, // 공격 무시 + 즉시 재장전
         // 우클릭 피냄새: 일정 거리 내 적 위치를 감지한다 (벽 관통·나만 보임·적에겐 안 보임)

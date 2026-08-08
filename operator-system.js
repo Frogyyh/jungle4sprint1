@@ -680,6 +680,15 @@
     const GUN_KATA_RADIUS = B.operators.gunslinger.gunKata.radius; // 원형 공격 범위
     const GUN_KATA_DAMAGE = B.operators.gunslinger.gunKata.damage;
     const SHIELD_VIEW_DEGREES = B.vision.shieldViewDegrees;
+    const HUNTER_VIEW_DEGREES = B.operators.hunter.viewDegrees;
+
+    // 넓은 기본 시야를 쓰는 병과의 부채꼴 각도(도)를 돌려준다. 없으면 null.
+    // 아이언(방패)·사냥꾼이 코어 45도 대신 이 값으로 시야를 넓힌다.
+    const wideViewDegrees = () => {
+      if (isOperator("bulwark")) return SHIELD_VIEW_DEGREES;
+      if (isOperator("hunter")) return HUNTER_VIEW_DEGREES;
+      return null;
+    };
 
     // 아이언 방벽 (라인하르트식): 우클릭 홀드로 전방 60도 부채꼴 방벽 전개
     const BARRIER_MAX_HP = B.operators.bulwark.barrier.maxHp;
@@ -2811,6 +2820,7 @@
       if (actor === this.player && !this._operatorForcedMove) {
         if (isOperator("sniper")) movement = delta.clone().multiplyScalar(0.75);
         else if (isOperator("ninja") && this.isInsideSmoke(this.player.pos)) movement = delta.clone().multiplyScalar(1.5);
+        else if (isOperator("ninja")) movement = delta.clone().multiplyScalar(1.2); // 닌자 기본 이동속도 +20%
         else if (isOperator("bulwark") && this._barrier?.active) movement = delta.clone().multiplyScalar(0.5);
         else if (isOperator("soldier") && this._soldierBuffUntil > this.now) movement = delta.clone().multiplyScalar(B.operators.soldier.enhance.speedMult);
       }
@@ -2924,18 +2934,18 @@
         return true;
       }
       const adjustedDistance = observer === this.player && isOperator("sniper") ? distance * 1.5 : distance;
-      const adjustedCone = observer === this.player && isOperator("bulwark")
-        ? SHIELD_VIEW_DEGREES
-        : coneDegrees;
+      const wideCone = observer === this.player ? wideViewDegrees() : null;
+      const adjustedCone = wideCone !== null ? wideCone : coneDegrees;
       return originalVisible(observer, target, adjustedCone, adjustedDistance);
     };
 
     const originalTraceVision = game.traceVision.bind(game);
     game.traceVision = function operatorTraceVision(origin, direction, distance) {
       let adjustedDirection = direction;
-      if (isOperator("bulwark") && origin.distanceToSquared(this.player.pos) < 1) {
+      const wideCone = wideViewDegrees();
+      if (wideCone !== null && origin.distanceToSquared(this.player.pos) < 1) {
         const angle = Math.atan2(direction.y, direction.x);
-        const halfView = SHIELD_VIEW_DEGREES * Math.PI / 360;
+        const halfView = wideCone * Math.PI / 360;
         const clampedAngle = this.player.dir + clamp(angleDelta(angle, this.player.dir), -halfView, halfView);
         adjustedDirection = vector(Math.cos(clampedAngle), Math.sin(clampedAngle));
       }
@@ -2948,11 +2958,12 @@
 
     const originalOperatorVisibility = game.updateVisibility.bind(game);
     game.updateVisibility = function updateIronWideVision() {
-      if (isOperator("bulwark")) this.visibilityDirty = true;
+      const wideCone = wideViewDegrees();
+      if (wideCone !== null) this.visibilityDirty = true;
       originalOperatorVisibility();
-      if (!isOperator("bulwark") || !this.visibilityMesh?.geometry || !this.visibilityBorder?.geometry) return;
+      if (wideCone === null || !this.visibilityMesh?.geometry || !this.visibilityBorder?.geometry) return;
 
-      const halfView = SHIELD_VIEW_DEGREES * Math.PI / 360;
+      const halfView = wideCone * Math.PI / 360;
       const segments = 96;
       const points = [];
       for (let index = 0; index <= segments; index++) {
@@ -2976,7 +2987,7 @@
       const oldPosition = oldGeometry.getAttribute("position");
       const geometry = new oldGeometry.constructor();
       geometry.setAttribute("position", new oldPosition.constructor(positions, 3));
-      geometry.userData.ironViewDegrees = SHIELD_VIEW_DEGREES;
+      geometry.userData.ironViewDegrees = wideCone;
       this.visibilityMesh.geometry = geometry;
       oldGeometry.dispose();
 
