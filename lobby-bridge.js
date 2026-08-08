@@ -314,7 +314,8 @@
       // 로비로 나가는 건 방을 아주 떠나는 것 — 봇만 남은 방은 서버가 바로 지운다.
       // ("방으로" 는 방에 남는 것이라 알리지 않는다.)
       window.__multiplayer?.leave?.();
-      location.href = LOBBY_URL;
+      // 온라인(멀티)은 방 목록(ui/rooms.html)으로, 싱글은 시작 화면(index.html)으로 돌아간다.
+      location.href = multiplayer ? LOBBY_URL : "./index.html";
     });
 
     // 온라인이 아니면 돌아갈 방이 없다. 다시 시작은 온라인에서 의미가 없다.

@@ -24,7 +24,12 @@
   "homepage": "https://github.com/Frogyyh/jungle4sprint1#readme",
   "devDependencies": {
     "eslint": "^9.39.5",
-    "ws": "^8.21.2",
-    "wrangler": "^4.30.0"
+    "wrangler": "^4.30.0",
+    "ws": "^8.21.2"
+  },
+  "allowScripts": {
+    "workerd@1.20250813.0": true,
+    "esbuild@0.25.4": true,
+    "sharp@0.33.5": true
   }
 }
