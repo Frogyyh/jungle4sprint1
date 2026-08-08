@@ -38,6 +38,9 @@ const ROUND_DURATION_MS = 180000;
 const IDLE_LIMIT_MS = 300000;
 // 로비 유휴 점검 주기.
 const IDLE_CHECK_INTERVAL_MS = 60000;
+// 목록에서 이 시간 이상 갱신이 없던 방은 유령 방으로 보고 지운다.
+// 활성 로비 방은 유휴 알람(60초)마다 저장돼 갱신되고, 게임은 3분 안에 끝나므로 안전하다.
+const STALE_ROOM_MS = 360000;
 const BOT_NAMES = ["봇 알파", "봇 브라보", "봇 찰리", "봇 델타", "봇 에코", "봇 폭스"];
 const roomName = (id) => `room:${id}`;
 const token = () => `${crypto.randomUUID()}-${crypto.randomUUID()}`;
@@ -152,6 +155,16 @@ export class Lobby extends DurableObject {
   async fetch(request) {
     if (request.method === "GET") {
       const rooms = (await this.ctx.storage.get("rooms")) || {};
+      // 유령 방 자가 치유: 오랫동안 갱신이 없던(= 죽었거나 삭제 통지가 누락된) 방을 목록에서 지운다.
+      const now = Date.now();
+      let pruned = false;
+      for (const [id, entry] of Object.entries(rooms)) {
+        if (now - (entry.updatedAt || entry.createdAt || 0) > STALE_ROOM_MS) {
+          delete rooms[id];
+          pruned = true;
+        }
+      }
+      if (pruned) await this.ctx.storage.put("rooms", rooms);
       return json({ rooms: Object.values(rooms).sort((a, b) => b.createdAt - a.createdAt) });
     }
     if (request.method !== "POST") return json({ error: "허용되지 않은 요청입니다." }, 405);
@@ -233,9 +246,12 @@ export class GameRoom extends DurableObject {
       host: room.members.find((m) => m.id === room.hostId)?.name || "",
       capacity: room.capacity,
       playerCount: room.members.length,
+      // 접속 중인 사람 수 — 목록에서 유령 방(전원 나감) 판별에 쓴다.
+      humanCount: room.members.filter((m) => !m.bot && m.connected).length,
       locked: Boolean(room.password),
       status: room.status,
       createdAt: room.createdAt,
+      updatedAt: room.updatedAt || room.createdAt,
     };
   }
 

@@ -980,6 +980,10 @@ const syncRemoteDash = (actor, entry, fx) => {
     effect.visible = actor.alive && (alwaysVisible || isEffectVisibleAt(actor, effect.position));
   };
 
+  /* 덫은 소유자 팀과 무관하게 "내 시야 안"에 있을 때만 보인다(안개 준수). */
+  const trapSightProbe = { alive: true, team: "enemy" };
+  const isPointInLocalSight = (point) => isEffectVisibleAt(trapSightProbe, point);
+
   const syncRemoteReveal = (actor, entry, reveal) => {
     if (!reveal) {
       disposeMarker(entry.reveal);
@@ -1030,29 +1034,21 @@ const syncRemoteDash = (actor, entry, fx) => {
       ]) setRemoteEffectVisible(actor, effect);
       // Reaper summons are deliberate global information and ignore fog of war.
       for (const summon of entry.summons || []) setRemoteEffectVisible(actor, summon, true);
-      // 스나이퍼 덫(반투명 깜빡이는 지뢰) — 아군·적군 모두에게 보인다(안개 무시).
-      // 아군: 연한 빨강(흐릿) 깜빡임 · 적(게스트): 선명한 빨강 깜빡임.
+      // 스나이퍼 덫 — 아군=파랑/적=빨강, 동일 모양(본체 점 + 링), 내 시야 안에서만 보임.
       const trapCfgV = B.operators.sniper.trap;
       const trapAlly = actor.team === game.player.team;
       const trapColor = trapAlly ? trapCfgV.allyColor : trapCfgV.color;
-      const blink = 0.06 + Math.abs(Math.sin(performance.now() / 200)) * 0.14; // 0.06~0.20 깜빡임
-      for (const zone of entry.trapZones || []) {
-        setRemoteEffectVisible(actor, zone, true);
-        zone.material.color.setHex(trapColor);
-        zone.material.transparent = true;
-        zone.material.opacity = trapAlly ? blink * 0.7 : blink;
-      }
+      const blink01 = Math.abs(Math.sin(performance.now() / 250));
       for (const body of entry.traps || []) {
-        setRemoteEffectVisible(actor, body, true);
+        body.visible = isPointInLocalSight(body.position);
         body.material.color.setHex(trapColor);
         body.material.transparent = true;
-        body.material.opacity = blink;
+        body.material.opacity = 0.5 + blink01 * 0.25;
       }
-      // 위험 구역 링 — 경계선도 함께 깜빡인다.
       for (const ring of entry.trapRings || []) {
-        setRemoteEffectVisible(actor, ring, true);
+        ring.visible = isPointInLocalSight(ring.position);
         ring.material.color.setHex(trapColor);
-        ring.material.opacity = (trapAlly ? 0.5 : 0.7) * (0.3 + Math.abs(Math.sin(performance.now() / 200)) * 0.7);
+        ring.material.opacity = 0.4 + blink01 * 0.4;
       }
       for (const grenade of entry.grenades?.values?.() || []) {
         const visible = isEffectVisibleAt(actor, grenade.mesh.position);
@@ -1150,7 +1146,6 @@ const syncRemoteDash = (actor, entry, fx) => {
     // 스나이퍼 덫(반투명 지뢰) — 아군·적군 모두에게 보인다.
     // 위험 구역 디스크(보이는 크기 = radius) + 지뢰 본체 점. 색/투명도는 팀별로 아래 visibility 에서 준다.
     const trapCfg = B.operators.sniper.trap;
-    syncPointMarkers(entry, "trapZones", fx?.T || [], trapCfg.color, trapCfg.radius / B.player.radius, 0, 1);
     syncPointMarkers(entry, "traps", fx?.T || [], trapCfg.color, 0.6, 0, 1);
     syncTrapRings(entry, fx?.T || []);
 

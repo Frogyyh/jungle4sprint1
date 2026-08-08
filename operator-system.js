@@ -2042,17 +2042,38 @@
       return mesh;
     };
     const makeTrapVisual = (pos) => {
+      // 상대(원격) 화면 덫과 완전히 동일한 모양: 본체 점(0.6) + 링. 색만 아군색(파랑).
       const meshes = [];
-      // 반투명 지뢰 몸체 + 스파이크 (플레이어 크기, 소유자=아군색·연한 빨강). 깜빡임은 updateTraps.
-      addTrapMesh(meshes, pos, 0.55, 0.18, 24);
-      for (let index = 0; index < 8; index++) {
-        const angle = index / 8 * Math.PI * 2;
-        addTrapMesh(meshes, vector(pos.x + Math.cos(angle) * 15, pos.y + Math.sin(angle) * 15), 0.16, 0.16, 24);
-      }
+      addTrapMesh(meshes, pos, 0.6, 0.4, 23);
       return meshes;
     };
+    // 위험 구역 링 — 지속 스트립으로 만든다(원격과 동일). 매 프레임 새로 그리면
+    // 각 조각이 페이드아웃돼 본체와 따로 깜빡이므로, 고정 스트립의 투명도만 갱신한다.
+    const TRAP_RING_SEGMENTS = 20;
+    const makeTrapRing = (pos) => {
+      const strips = [];
+      for (let index = 0; index < TRAP_RING_SEGMENTS; index++) {
+        const strip = game.floor.clone(false);
+        strip.geometry = game.floor.geometry.clone();
+        strip.material = game.floor.material.clone();
+        strip.material.color.setHex(TRAP.allyColor);
+        strip.material.transparent = true;
+        strip.material.depthWrite = false;
+        const angleA = index / TRAP_RING_SEGMENTS * Math.PI * 2;
+        const angleB = (index + 1) / TRAP_RING_SEGMENTS * Math.PI * 2;
+        setStripTransform(
+          strip,
+          vector(pos.x + Math.cos(angleA) * TRAP.radius, pos.y + Math.sin(angleA) * TRAP.radius),
+          vector(pos.x + Math.cos(angleB) * TRAP.radius, pos.y + Math.sin(angleB) * TRAP.radius),
+          3,
+        );
+        game.fxGroup.add(strip);
+        strips.push(strip);
+      }
+      return strips;
+    };
     const disposeTrap = (trap) => {
-      for (const mesh of trap.meshes || []) {
+      for (const mesh of [...(trap.meshes || []), ...(trap.ringStrips || [])]) {
         mesh.parent?.remove(mesh);
         mesh.geometry?.dispose?.();
         mesh.material?.dispose?.();
@@ -2086,37 +2107,47 @@
         : game.player.pos.clone().add(toTarget.normalize().multiplyScalar(TRAP.placeRange));
       if (game.collides(pos, 10)) { game.showToast("TRAP // 벽 위엔 설치 불가"); return; }
       game.player.trapCount--;
-      game._traps.push({ pos, meshes: makeTrapVisual(pos), armedAt: game.now + TRAP.armDelay });
+      game._traps.push({ pos, meshes: makeTrapVisual(pos), ringStrips: makeTrapRing(pos), armedAt: game.now + TRAP.armDelay });
       game._trapPlacing = false;
-      // 설치 확인 플래시 — 발동 범위를 크게 보여준다.
-      drawTrapRing(pos, TRAP.radius, TRAP.color, 5, 0.9, 0.5, 28);
-      createPulseDisc({ pos: pos.clone() }, 40, TRAP.color, 0.4, 0.3);
+      // 설치 확인 플래시(내 덫 = 아군색·파랑)
+      drawTrapRing(pos, TRAP.radius, TRAP.allyColor, 5, 0.9, 0.5, 28);
+      createPulseDisc({ pos: pos.clone() }, 40, TRAP.allyColor, 0.4, 0.3);
       game.showToast(`TRAP SET // ${game.player.trapCount} LEFT`);
     };
     // 설치 모드 미리보기: 빨간 설치 가능 범위 링 + 조준 마커 (createWorldStrip 로 매 프레임 그린다).
     const updateTrapPlacement = () => {
       if (!isOperator("sniper") || !game._trapPlacing || !game.player.alive || game.phase !== "playing") return;
       const origin = game.player.pos;
-      // 설치 가능 범위(빨간 원)
-      drawTrapRing(origin, TRAP.placeRange, TRAP.color, 4, 0.7, 0.05, 24);
+      // 설치 가능 범위(아군색·파란 원)
+      drawTrapRing(origin, TRAP.placeRange, TRAP.allyColor, 4, 0.7, 0.05, 24);
       // 조준 마커 — 범위 밖이면 경계로 당긴다. 벽 위면 회색(설치 불가).
       const toTarget = game.mouse.world.clone().sub(origin);
       const distance = toTarget.length();
       const pos = distance <= TRAP.placeRange
         ? game.mouse.world.clone()
         : origin.clone().add(toTarget.normalize().multiplyScalar(TRAP.placeRange));
-      const markerColor = game.collides(pos, 10) ? 0x888888 : TRAP.color;
+      const markerColor = game.collides(pos, 10) ? 0x888888 : TRAP.allyColor;
       drawTrapRing(pos, 13, markerColor, 3, 0.95, 0.05, 10);
       createWorldStrip(vector(pos.x - 9, pos.y), vector(pos.x + 9, pos.y), 3, markerColor, { duration: 0.05, opacity: 0.95 });
       createWorldStrip(vector(pos.x, pos.y - 9), vector(pos.x, pos.y + 9), 3, markerColor, { duration: 0.05, opacity: 0.95 });
+    };
+    // 내 덫도 시야 안(안개 준수)에 있을 때만 그린다. 발동 판정은 시야와 무관하게 계속한다.
+    const trapInSight = (pos) => {
+      if (!game.player.alive) return false;
+      const probe = { pos: game.player.pos.clone(), alive: true, radius: 4, team: "enemy" };
+      probe.pos.set(pos.x, pos.y);
+      return game.isVisible(game.player, probe, B.vision.coneDegrees, B.vision.maxRange);
     };
     const updateTraps = () => {
       if (!game._traps.length) return;
       for (let index = game._traps.length - 1; index >= 0; index--) {
         const trap = game._traps[index];
-        // 깜빡임 — 알파 0.06~0.20 사이를 오간다.
-        const blink = 0.06 + Math.abs(Math.sin(game.now * 6 + index)) * 0.14;
-        for (const mesh of trap.meshes) mesh.material.opacity = blink;
+        // 본체 점 + 지속 링을 하나의 깜빡임 값으로 함께 조절한다(따로 깜빡이지 않게).
+        // 속도/위상도 원격(적 덫)과 동일하게 맞춘다.
+        const blink01 = Math.abs(Math.sin(performance.now() / 250)); // 0..1
+        const visible = trapInSight(trap.pos);
+        for (const mesh of trap.meshes) { mesh.visible = visible; mesh.material.opacity = 0.5 + blink01 * 0.25; }
+        for (const strip of trap.ringStrips || []) { strip.visible = visible; strip.material.opacity = 0.4 + blink01 * 0.4; }
         if (game.now < trap.armedAt) continue;
         for (const bot of game.bots) {
           if (!bot.alive || bot.team === game.player.team) continue;
@@ -2456,7 +2487,7 @@
 
     function clearTraps() {
       for (const trap of game._traps || []) {
-        for (const mesh of trap.meshes || []) {
+        for (const mesh of [...(trap.meshes || []), ...(trap.ringStrips || [])]) {
           mesh.parent?.remove(mesh);
           mesh.geometry?.dispose?.();
           mesh.material?.dispose?.();

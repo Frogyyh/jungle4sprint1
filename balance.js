@@ -107,15 +107,13 @@
         weapon: { id: "bolt_action", name: "BOLT-ACTION RIFLE", damage: 80, pellets: 1, rpm: 67, spreadDeg: 1, magSize: 1, reserve: 9999, reload: 0.9, range: 1420, projectileSpeed: 2200, color: 0x9ef0ff },
         // 우클릭 투망: 처음 적중한 적을 2초간 50% 둔화시키고 스나이퍼는 뒤로 밀려난다.
         net: { range: 620, slowMult: 0.5, slowDuration: 2, knockback: 220, speed: 1150, cooldown: 8, color: 0xbfe9ff },
-        // SPACE 로 설치 모드 진입 → 범위(placeRange) 안을 우클릭해 덫을 설치한다.
-        // 게임 시작 시 3개. 상대가 밟으면 1초 포박. 덫은 아군·적군 모두에게 보인다(반투명 빨간 지뢰).
-        // radius = 화면에 보이는 위험 구역, triggerRadius = 실제 발동 범위(보이는 것보다 약간 넓음).
-        // color = 적(게스트) 시야(선명한 빨강·깜빡임), allyColor = 아군/소유자 시야(연한 빨강).
+        // SPACE 로 설치 모드 진입 → 범위(placeRange) 안을 우클릭해 덫을 설치한다. 게임 시작 시 3개.
         // radius = 보이는 지뢰 크기(플레이어 정도), triggerRadius = 살짝만 걸쳐도 발동.
-        // 밟으면 damage 만큼 약한 피해 + rootDuration 초 포박. 아군·적군 모두 깜빡이며 보인다.
+        // 밟으면 damage 만큼 약한 피해 + rootDuration 초 포박. 내 시야 안에서만 보인다.
+        // color = 적군 덫(빨강), allyColor = 아군/내 덫(파랑).
         trap: {
           count: 3, rootDuration: 1, radius: 22, triggerRadius: 26, damage: 8, armDelay: 0.4, placeRange: 200,
-          color: 0xff3b3b, allyColor: 0xff9a9a, alpha: 0.2, allyAlpha: 0.12,
+          color: 0xff3b3b, allyColor: 0x4d9bff, alpha: 0.2, allyAlpha: 0.14,
         },
       },
       demolitionist: {
