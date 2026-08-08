@@ -19,6 +19,11 @@ const DAMAGE_LIMITS = {
   gunslinger: 50, bulwark: 45, sentinel: 40, soldier: 35, frog: 18,
   reaper: 48, hunter: 55, ninja: 65, sniper: 100, demolitionist: 85,
 };
+const CHARACTER_HP = Object.freeze({
+  gunslinger: 150, bulwark: 300, sentinel: 100, soldier: 200, frog: 150,
+  reaper: 200, hunter: 200, ninja: 150, sniper: 100, demolitionist: 150,
+});
+const maxHpFor = (characterId) => CHARACTER_HP[characterId] || 100;
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
@@ -52,6 +57,7 @@ const publicMember = (member) => ({
   characterId: member.characterId,
   connected: Boolean(member.connected),
   bot: Boolean(member.bot),
+  maxHp: maxHpFor(member.characterId),
   hp: member.hp,
   alive: member.alive,
   x: member.x,
@@ -285,7 +291,7 @@ export class GameRoom extends DurableObject {
     const host = {
       id: crypto.randomUUID(), name: cleanText(input.nickname, 12), team: "A",
       ready: true, characterId: "soldier", token: hostToken,
-      connected: false, hp: 100, alive: true, x: -520, y: 0, dir: 0,
+      connected: false, hp: maxHpFor("soldier"), alive: true, x: -520, y: 0, dir: 0,
       kills: 0, damage: 0, shots: 0, hits: 0, lastActiveAt: now,
     };
     const room = {
@@ -316,7 +322,7 @@ export class GameRoom extends DurableObject {
     const member = {
       id: crypto.randomUUID(), name: nickname, team, ready: false,
       characterId: "soldier", token: token(), connected: false,
-      hp: 100, alive: true, x: team === "A" ? -520 : 520, y: 0,
+      hp: maxHpFor("soldier"), alive: true, x: team === "A" ? -520 : 520, y: 0,
       dir: team === "A" ? 0 : Math.PI,
       kills: 0, damage: 0, shots: 0, hits: 0, lastActiveAt: Date.now(),
     };
@@ -353,7 +359,7 @@ export class GameRoom extends DurableObject {
       room.winner = null;
       room.reopenedAt = Date.now(); // 방 복귀 전환 구간 시작 — 이탈로 인한 강제 퇴장 방지
       for (const player of room.members) {
-        player.hp = 100;
+        player.hp = maxHpFor(player.characterId);
         player.alive = true;
         player.ready = player.bot || player.id === room.hostId; // 봇은 언제나 준비 완료
         clearStats(player);
@@ -447,7 +453,7 @@ export class GameRoom extends DurableObject {
       room.members.push({
         id: crypto.randomUUID(), name, team, ready: true, characterId,
         token: null, connected: false, bot: true,
-        hp: 100, alive: true, x: team === "A" ? -520 : 520, y: 0,
+        hp: maxHpFor(characterId), alive: true, x: team === "A" ? -520 : 520, y: 0,
         dir: team === "A" ? 0 : Math.PI,
         kills: 0, damage: 0, shots: 0, hits: 0,
       });
@@ -467,7 +473,7 @@ export class GameRoom extends DurableObject {
       const teamOffsets = { A: 0, B: 0 };
       for (const player of room.members) {
         const offset = (teamOffsets[player.team]++ - 1) * 85;
-        player.hp = 100; player.alive = true;
+        player.hp = maxHpFor(player.characterId); player.alive = true;
         clearStats(player); // 새 판이니 전적도 새로 센다
         player.x = player.team === "A" ? -520 : 520;
         player.y = offset; player.dir = player.team === "A" ? 0 : Math.PI;

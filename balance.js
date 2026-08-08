@@ -44,6 +44,7 @@
     /* 병과별 스킬/무기 */
     operators: {
       gunslinger: {
+        hp: 150,
         weapon: { id: "dual_pistols", name: "DUAL PISTOLS", damage: 15, pellets: 1, rpm: 800, spreadDeg: 4, magSize: 30, reserve: 9999, reload: 2.5, range: 720, projectileSpeed: 1450, color: 0xffd166 },
         gunKata: { damage: 50, radius: 176, cooldown: 5 }, // 반경 = 근접 기본 사거리(88) × 2 · SPACE 건카타 돌진(쿨타임 5초·무제한)
         dash: { speed: 760, duration: 0.5 },
@@ -51,11 +52,13 @@
         spray: { damage: 12, shots: 16, halfAngleDeg: 32, duration: 0.55, cooldown: 8, projectileSpeed: 1450 },
       },
       bulwark: {
+        hp: 300,
         weapon: { id: "shield_pistol", name: "SHIELD LMG", damage: 6, pellets: 1, rpm: 900, spreadDeg: 12, magSize: 100, reserve: 9999, reload: 2.5, range: 620, projectileSpeed: 1050, color: 0x7ea8ff },
         barrier: { maxHp: 250, regenDelay: 1, regenRate: 50, breakCooldown: 10, halfAngleDeg: 60, inner: 55, outer: 100 },
         flashShield: { range: 260, halfAngleDeg: 120, duration: 1 },
       },
       sentinel: {
+        hp: 100,
         weapon: { id: "railgun", name: "RAILGUN", damage: 40, pellets: 1, rpm: 45, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 580, projectileSpeed: 1, color: 0x55f0b0 },
         railgun: { chargeTime: 1 },
         reveal: { range: 920, duration: 7, cooldown: 15 },
@@ -64,6 +67,7 @@
         heavyLaser: { chargeTime: 3, damage: 40, halfWidth: 46, cooldown: 10, color: 0xb26cff },
       },
       soldier: {
+        hp: 200,
         weapon: { id: "rifle", name: "ASSAULT RIFLE", damage: 20, pellets: 1, rpm: 420, spreadDeg: 4.5, magSize: 30, reserve: 9999, reload: 2.5, range: 1040, projectileSpeed: 1500, color: 0x6de6df },
         // 우클릭 섬광탄: 개수 무제한, 쿨타임 5초.
         flashCooldown: 5,
@@ -71,6 +75,7 @@
         enhance: { duration: 5, speedMult: 1.4, damageMult: 1.5, cooldown: 20 },
       },
       frog: {
+        hp: 150,
         weapon: { id: "frog", name: "FROG BUBBLE SPRAYER", damage: 4, pellets: 5, rpm: 300, spreadDeg: 12, magSize: 30, reserve: 9999, reload: 2.5, range: 900, projectileSpeed: 1200, color: 0x7eeeff },
         waterSlow: { duration: 1, moveScale: 0.7 },
         bubble: { damage: 2, speed: 920, color: 0x83ffad, range: 334 }, // 수동/자동 비눗방울 (사거리 334 = 시야 920×0.33 + 30)
@@ -80,6 +85,7 @@
         momentum: { max: 430, damping: 0.035 },
       },
       reaper: {
+        hp: 200,
         weapon: { id: "scythe", name: "GREAT SCYTHE", damage: 40, pellets: 1, rpm: 80, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 128, projectileSpeed: 1, color: 0xc59bff },
         meleeHalfAngle: Math.PI * 0.31,
         scytheThrow: { range: 480, outSpeed: 950, returnSpeed: 1150, hitBuffer: 26, fxDots: 8, fxRing: 8 },
@@ -91,12 +97,14 @@
         },
       },
       hunter: {
+        hp: 200,
         weapon: { id: "shotgun", name: "DOUBLE BARREL", damage: 24, pellets: 5, rpm: 150, spreadDeg: 18, magSize: 2, reserve: 9999, reload: 2.5, range: 470, projectileSpeed: 1120, color: 0xffab63 },
         dash: { speed: 900, duration: 0.34, cooldown: 3, invulnerable: true }, // 공격 무시 + 즉시 재장전
         // 우클릭 피냄새: 일정 거리 내 적 위치를 감지한다 (벽 관통·나만 보임·적에겐 안 보임)
         bloodScent: { range: 720, duration: 5, cooldown: 12 },
       },
       ninja: {
+        hp: 150,
         weapon: { id: "katana", name: "KATANA / DAGGERS", damage: 40, pellets: 1, rpm: 105, spreadDeg: 0, magSize: 1, reserve: 9999, reload: 2.5, range: 118, projectileSpeed: 1, color: 0xff5f6d },
         meleeHalfAngle: Math.PI * 0.29,
         dash: { speed: 780, duration: 0.33, cooldown: 5 },
@@ -104,6 +112,7 @@
         dagger: { damage: 15, range: 720, speed: 1050 },
       },
       sniper: {
+        hp: 100,
         weapon: { id: "bolt_action", name: "BOLT-ACTION RIFLE", damage: 80, pellets: 1, rpm: 67, spreadDeg: 1, magSize: 1, reserve: 9999, reload: 0.9, range: 1420, projectileSpeed: 2200, color: 0x9ef0ff },
         // 우클릭 투망: 처음 적중한 적을 2초간 50% 둔화시키고 스나이퍼는 뒤로 밀려난다.
         net: { range: 620, slowMult: 0.5, slowDuration: 2, knockback: 220, speed: 1150, cooldown: 8, color: 0xbfe9ff },
@@ -117,6 +126,7 @@
         },
       },
       demolitionist: {
+        hp: 150,
         weapon: { id: "grenade_launcher", name: "6-SHOT GRENADE LAUNCHER", damage: 40, pellets: 1, rpm: 90, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 780, projectileSpeed: 620, color: 0xffa8f0 },
         // 우클릭 수류탄: 개수 제한 없음, 쿨타임 3초.
         fragCooldown: 3,
