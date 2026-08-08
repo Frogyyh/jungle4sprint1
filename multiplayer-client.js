@@ -34,6 +34,10 @@
     return room?.members.find((member) => member.id === id);
   }
 
+  function maxHpFor(characterId) {
+    return B.operators?.[characterId]?.hp || B.player.hp;
+  }
+
   function paintActor(actor, member) {
     const own = findMember(playerId);
     const color = member.team === own?.team ? 0x6de6df : 0xff6b66;
@@ -63,7 +67,8 @@
     const iAmHost = room?.hostId === playerId;
     game.player.pos.set(own?.x ?? -520, own?.y ?? 0);
     game.player.dir = own?.dir ?? 0;
-    game.player.hp = own?.hp ?? B.player.hp;
+    game.player.maxHp = own?.maxHp ?? maxHpFor(own?.characterId);
+    game.player.hp = own?.hp ?? game.player.maxHp;
     game.player.alive = own?.alive !== false;
     game.player.syncMesh();
 
@@ -88,7 +93,9 @@
       actor._targetPos = position.clone();
       actor._targetDir = member.dir ?? 0;
       actor.team = member.team === own?.team ? "player" : "enemy";
-      actor.maxHp = B.player.hp; actor.hp = member.hp ?? B.player.hp; actor.alive = member.alive !== false;
+      actor.maxHp = member.maxHp ?? maxHpFor(member.characterId);
+      actor.hp = member.hp ?? actor.maxHp;
+      actor.alive = member.alive !== false;
       actor.dir = member.dir ?? 0;
       actor.mesh.visible = actor.alive;
       paintActor(actor, member);
@@ -124,6 +131,7 @@
     if (!actor || actor._bot) return; // 내가 돌리는 봇은 내 화면이 기준이다
     actor._targetPos.set(member.x, member.y);
     actor._targetDir = member.dir;
+    actor.maxHp = member.maxHp ?? maxHpFor(member.characterId);
     actor.hp = member.hp;
     actor.alive = member.alive;
     actor.mesh.visible = member.alive;

@@ -758,8 +758,8 @@
     const applyOperator = (selected) => {
       game.activeOperatorId = selected.id;
       game.player.operatorId = selected.id;
-      game.player.maxHp = B.player.hp;
-      game.player.hp = B.player.hp;
+      game.player.maxHp = B.operators[selected.id]?.hp || B.player.hp;
+      game.player.hp = game.player.maxHp;
       game.player.lastDamageAt = -Infinity;
       game._operatorCooldowns = Object.create(null);
       game._railChargeStartedAt = null;
@@ -3401,6 +3401,13 @@
       originalRenderUi();
       if (!this.activeOperatorId) return;
       const selected = operator();
+      const maxHp = this.player.maxHp || selected.hp || B.player.hp;
+      const hp = Math.max(0, Math.min(maxHp, this.player.hp));
+      const hpRatio = maxHp > 0 ? hp / maxHp : 0;
+      const healthText = document.querySelector("#health-text");
+      const healthBar = document.querySelector("#health-bar");
+      if (healthText) healthText.textContent = `${Math.ceil(hp)} / ${maxHp}`;
+      if (healthBar) healthBar.style.width = `${hpRatio * 100}%`;
       ui.operator.textContent = `${selected.name} // ${selected.koreanName}`;
       ui.operator.style.color = selected.color;
       ui.weapon.textContent = this.player.weapon.name;

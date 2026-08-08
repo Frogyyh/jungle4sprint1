@@ -119,7 +119,7 @@ await host.next((message) => message.type === "state" && message.player.id === j
 await new Promise((resolve) => setTimeout(resolve, 50));
 host.send(JSON.stringify({ type: "hit", targetId: joined.playerId, damage: 20 }));
 const hit = await guest.next((message) => message.type === "hit" && message.targetId === joined.playerId);
-if (hit.hp !== 80) throw new Error(`hit synchronization mismatch: ${hit.hp}`);
+if (hit.hp !== 280) throw new Error(`hit synchronization mismatch: ${hit.hp}`);
 if (hit.sourceX !== -400 || hit.sourceY !== 25) throw new Error("damage direction source mismatch");
 
 host.terminate(); guest.terminate();
