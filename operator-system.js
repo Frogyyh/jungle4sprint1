@@ -664,7 +664,7 @@
       reaper: { secondary: 0, ability: SPECIAL_COOLDOWN },
       hunter: { secondary: B.operators.hunter.bloodScent.cooldown, ability: B.operators.hunter.dash.cooldown },
       ninja: { secondary: 1, ability: SPECIAL_COOLDOWN },
-      sniper: { secondary: B.operators.sniper.net.cooldown, ability: 0 },
+      sniper: { secondary: B.operators.sniper.net.cooldown, ability: B.operators.sniper.trap.cooldown },
       demolitionist: { secondary: B.operators.demolitionist.fragCooldown, ability: B.operators.demolitionist.barrage.cooldown },
     };
 
@@ -779,8 +779,7 @@
       game._heavyNeedsRelease = false;
       game._heavyLaserShots = 0;
       game._barrage = null;             // 폭탄마 직선 폭격
-      game._trapPlacing = false;        // 스나이퍼 덫 설치 모드
-      game.player.trapCount = selected.id === "sniper" ? B.operators.sniper.trap.count : 0;
+      game._trapPlacing = false;        // 스나이퍼 덫 설치 모드 (활성 덫 수는 game._traps.length 로 관리)
       const scytheSource = game.player._weaponVisualRoot;
       if (scytheSource) scytheSource.visible = true;
       clearSummons();
@@ -2091,28 +2090,36 @@
         );
       }
     };
+    // 설치 가능 조건: 활성 덫이 maxActive 미만 + 쿨타임 준비 완료. 하나가 사라지면 다시 놓을 수 있다.
+    const trapBlockReason = () => {
+      if (game._traps.length >= TRAP.maxActive) return `TRAP // 최대 ${TRAP.maxActive}개`;
+      if (!abilityReady("trap")) return `TRAP ${cooldownRemaining("trap").toFixed(1)}s`;
+      return null;
+    };
     // SPACE: 설치 모드 진입/취소 (토글). 진입하면 발밑에 설치 가능 범위가 뜬다.
     const beginTrapPlacement = () => {
-      if ((game.player.trapCount || 0) <= 0) { game.showToast("NO TRAPS LEFT"); return; }
+      const blocked = trapBlockReason();
+      if (blocked) { game.showToast(blocked); return; }
       game._trapPlacing = !game._trapPlacing;
       game.showToast(game._trapPlacing ? "TRAP // 범위 내 우클릭으로 설치" : "TRAP CANCEL");
     };
     // 설치 모드에서 우클릭: 범위 안(placeRange)에 덫을 놓는다. 범위 밖이면 경계로 당겨 놓는다.
     const placeTrapAtMouse = () => {
-      if ((game.player.trapCount || 0) <= 0) { game._trapPlacing = false; game.showToast("NO TRAPS LEFT"); return; }
+      const blocked = trapBlockReason();
+      if (blocked) { game._trapPlacing = false; game.showToast(blocked); return; }
       const toTarget = game.mouse.world.clone().sub(game.player.pos);
       const distance = toTarget.length();
       const pos = distance <= TRAP.placeRange
         ? game.mouse.world.clone()
         : game.player.pos.clone().add(toTarget.normalize().multiplyScalar(TRAP.placeRange));
       if (game.collides(pos, 10)) { game.showToast("TRAP // 벽 위엔 설치 불가"); return; }
-      game.player.trapCount--;
+      beginCooldown("trap", TRAP.cooldown);
       game._traps.push({ pos, meshes: makeTrapVisual(pos), ringStrips: makeTrapRing(pos), armedAt: game.now + TRAP.armDelay });
       game._trapPlacing = false;
       // 설치 확인 플래시(내 덫 = 아군색·파랑)
       drawTrapRing(pos, TRAP.radius, TRAP.allyColor, 5, 0.9, 0.5, 28);
       createPulseDisc({ pos: pos.clone() }, 40, TRAP.allyColor, 0.4, 0.3);
-      game.showToast(`TRAP SET // ${game.player.trapCount} LEFT`);
+      game.showToast(`TRAP SET // ${TRAP.maxActive - game._traps.length} LEFT`);
     };
     // 설치 모드 미리보기: 빨간 설치 가능 범위 링 + 조준 마커 (createWorldStrip 로 매 프레임 그린다).
     const updateTrapPlacement = () => {
@@ -2131,28 +2138,20 @@
       createWorldStrip(vector(pos.x - 9, pos.y), vector(pos.x + 9, pos.y), 3, markerColor, { duration: 0.05, opacity: 0.95 });
       createWorldStrip(vector(pos.x, pos.y - 9), vector(pos.x, pos.y + 9), 3, markerColor, { duration: 0.05, opacity: 0.95 });
     };
-    // 내 덫도 시야 안(안개 준수)에 있을 때만 그린다. 발동 판정은 시야와 무관하게 계속한다.
-    const trapInSight = (pos) => {
-      if (!game.player.alive) return false;
-      const probe = { pos: game.player.pos.clone(), alive: true, radius: 4, team: "enemy" };
-      probe.pos.set(pos.x, pos.y);
-      return game.isVisible(game.player, probe, B.vision.coneDegrees, B.vision.maxRange);
-    };
     const updateTraps = () => {
       if (!game._traps.length) return;
       for (let index = game._traps.length - 1; index >= 0; index--) {
         const trap = game._traps[index];
         // 본체 점 + 지속 링을 하나의 깜빡임 값으로 함께 조절한다(따로 깜빡이지 않게).
-        // 속도/위상도 원격(적 덫)과 동일하게 맞춘다.
+        // 내 덫은 항상 보인다(여러 개 설치해도 안 사라짐). 상대에게는 원격 쪽에서 시야로 가린다.
         const blink01 = Math.abs(Math.sin(performance.now() / 250)); // 0..1
-        const visible = trapInSight(trap.pos);
-        for (const mesh of trap.meshes) { mesh.visible = visible; mesh.material.opacity = 0.5 + blink01 * 0.25; }
-        for (const strip of trap.ringStrips || []) { strip.visible = visible; strip.material.opacity = 0.4 + blink01 * 0.4; }
+        for (const mesh of trap.meshes) { mesh.visible = true; mesh.material.opacity = 0.5 + blink01 * 0.25; }
+        for (const strip of trap.ringStrips || []) { strip.visible = true; strip.material.opacity = 0.4 + blink01 * 0.4; }
         if (game.now < trap.armedAt) continue;
         for (const bot of game.bots) {
           if (!bot.alive || bot.team === game.player.team) continue;
-          // 실제 발동은 보이는 범위(radius)보다 약간 넓은 triggerRadius — 살짝만 걸쳐도 작동.
-          if (bot.pos.distanceTo(trap.pos) > TRAP.triggerRadius + bot.radius) continue;
+          // 발동 반경(triggerRadius) 안에 적이 들어오면 작동.
+          if (bot.pos.distanceTo(trap.pos) > TRAP.triggerRadius + (bot.radius || 20)) continue;
           game.applyControlEffect(bot, 0.05, TRAP.rootDuration); // 1초 포박
           game.damageActor(game.player, bot, TRAP.damage);        // 약한 피해
           for (let burst = 0; burst < 12; burst++) {
@@ -3480,7 +3479,10 @@
         secondaryCooldown = cooldownRemaining("flash");
         abilityCooldown = cooldownRemaining("enhance");
       }
-      else if (selected.id === "sniper") secondaryCooldown = cooldownRemaining("net");
+      else if (selected.id === "sniper") {
+        secondaryCooldown = cooldownRemaining("net");
+        abilityCooldown = cooldownRemaining("trap");
+      }
       else if (selected.id === "demolitionist") {
         secondaryCooldown = cooldownRemaining("frag");
         abilityCooldown = cooldownRemaining("barrage");
@@ -3522,7 +3524,7 @@
       // 슬롯1 배지: 군인 섬광탄·폭탄마 수류탄은 무제한(∞). 슬롯2 배지: 스나이퍼 덫 잔여 개수.
       const totals = SLOT_COOLDOWN_TOTALS[selected.id] || { secondary: 0, ability: 0 };
       const slot1Count = (selected.id === "soldier" || selected.id === "demolitionist") ? Infinity : 0;
-      const slot2Count = selected.id === "sniper" ? (this.player.trapCount || 0) : 0;
+      const slot2Count = selected.id === "sniper" ? Math.max(0, B.operators.sniper.trap.maxActive - (this._traps?.length || 0)) : 0;
       renderSkillSlot(ui.slot1, {
         label: secondary,
         remaining: secondaryCooldown,
