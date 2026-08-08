@@ -20,7 +20,7 @@
       maxRange: 920,      // 코어 시야 최대 거리
       coneDegrees: 45,    // 코어 시야 부채꼴 (좌우 22.5도)
       nearRadius: 100,    // 원형 근접 시야 반경
-      shieldViewDegrees: 20, // 아이언 방벽 홀드 중 시야각 제한
+      shieldViewDegrees: 90, // 아이언 시야각
       camera: { defaultScale: 1.25, sniperScale: 1.5 },
     },
 
@@ -51,7 +51,7 @@
         spray: { damage: 12, shots: 16, halfAngleDeg: 32, duration: 0.55, cooldown: 8, projectileSpeed: 1450 },
       },
       bulwark: {
-        weapon: { id: "shield_pistol", name: "SHIELD & PISTOL", damage: 10, pellets: 1, rpm: 375, spreadDeg: 5, magSize: 20, reserve: 9999, reload: 2.5, range: 540, projectileSpeed: 950, color: 0x7ea8ff },
+        weapon: { id: "shield_pistol", name: "SHIELD LMG", damage: 6, pellets: 1, rpm: 900, spreadDeg: 12, magSize: 100, reserve: 9999, reload: 2.5, range: 620, projectileSpeed: 1050, color: 0x7ea8ff },
         barrier: { maxHp: 250, regenDelay: 1, regenRate: 50, breakCooldown: 10, halfAngleDeg: 60, inner: 55, outer: 100 },
         flashShield: { range: 260, halfAngleDeg: 120, duration: 1 },
       },

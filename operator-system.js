@@ -1522,6 +1522,11 @@
         return;
       }
       if (this._selectedGadget) return;
+      // Iron keeps the shield deployed while firing the pistol.
+      if (isOperator("bulwark")) {
+        originalFire(actor, aim);
+        return;
+      }
       if (isOperator("reaper")) return meleeAttack(WEAPONS.reaper.damage, WEAPONS.reaper.range, B.operators.reaper.meleeHalfAngle);
       if (isOperator("ninja")) return meleeAttack(WEAPONS.ninja.damage, WEAPONS.ninja.range, B.operators.ninja.meleeHalfAngle);
       if (isOperator("sentinel")) return fireRailgun();
@@ -2626,6 +2631,16 @@
     };
 
     game.canvas.addEventListener("pointerdown", (event) => {
+      if (event.button === 0 && game.phase === "playing" && isOperator("bulwark") && game._barrier?.active) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        game.mouse.x = event.clientX;
+        game.mouse.y = event.clientY;
+        game.mouse.down = true;
+        game.updateMouseWorld();
+        game.fire(game.player, game.player.dir);
+        return;
+      }
       if (event.button !== 2 || game.phase !== "playing") return;
       if (isOperator("frog")) return;
       event.preventDefault();
@@ -2791,7 +2806,7 @@
       }
       const adjustedDistance = observer === this.player && isOperator("sniper") ? distance * 1.5 : distance;
       const adjustedCone = observer === this.player && isOperator("bulwark")
-        ? Math.min(coneDegrees, SHIELD_VIEW_DEGREES)
+        ? SHIELD_VIEW_DEGREES
         : coneDegrees;
       return originalVisible(observer, target, adjustedCone, adjustedDistance);
     };
@@ -2810,6 +2825,52 @@
         return origin.clone().add(adjustedDirection.clone().multiplyScalar(distance));
       }
       return originalTraceVision(origin, adjustedDirection, isOperator("sniper") ? distance * 1.5 : distance);
+    };
+
+    const originalOperatorVisibility = game.updateVisibility.bind(game);
+    game.updateVisibility = function updateIronWideVision() {
+      if (isOperator("bulwark")) this.visibilityDirty = true;
+      originalOperatorVisibility();
+      if (!isOperator("bulwark") || !this.visibilityMesh?.geometry || !this.visibilityBorder?.geometry) return;
+
+      const halfView = SHIELD_VIEW_DEGREES * Math.PI / 360;
+      const segments = 96;
+      const points = [];
+      for (let index = 0; index <= segments; index++) {
+        const angle = this.player.dir - halfView + index / segments * halfView * 2;
+        points.push(this.traceVision(
+          this.player.pos,
+          vector(Math.cos(angle), Math.sin(angle)),
+          B.vision.maxRange,
+        ));
+      }
+
+      const positions = [];
+      for (let index = 0; index < points.length - 1; index++) {
+        positions.push(
+          this.player.pos.x, this.player.pos.y, 12,
+          points[index].x, points[index].y, 12,
+          points[index + 1].x, points[index + 1].y, 12,
+        );
+      }
+      const oldGeometry = this.visibilityMesh.geometry;
+      const oldPosition = oldGeometry.getAttribute("position");
+      const geometry = new oldGeometry.constructor();
+      geometry.setAttribute("position", new oldPosition.constructor(positions, 3));
+      geometry.userData.ironViewDegrees = SHIELD_VIEW_DEGREES;
+      this.visibilityMesh.geometry = geometry;
+      oldGeometry.dispose();
+
+      const Vector3 = this.camera.position.constructor;
+      const borderPoints = [
+        new Vector3(this.player.pos.x, this.player.pos.y, 13),
+        ...points.map((point) => new Vector3(point.x, point.y, 13)),
+        new Vector3(this.player.pos.x, this.player.pos.y, 13),
+      ];
+      const oldBorder = this.visibilityBorder.geometry;
+      const borderGeometry = new oldBorder.constructor().setFromPoints(borderPoints);
+      this.visibilityBorder.geometry = borderGeometry;
+      oldBorder.dispose();
     };
 
     const updateSummons = (dt) => {
@@ -3346,7 +3407,7 @@
       if (["reaper", "ninja"].includes(selected.id)) {
         ui.ammo.textContent = "∞";
         ui.reserve.textContent = "∞";
-      } else if (selected.id === "frog") {
+      } else if (["frog", "bulwark"].includes(selected.id)) {
         ui.ammo.textContent = `${this.player.ammo}`;
         ui.reserve.textContent = "∞";
       } else if (this.player.reserve >= 9999) {

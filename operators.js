@@ -35,7 +35,7 @@
       color: "#7ea8ff",
       tagline: "정면은 곧 안전지대",
       desc: "우클릭 홀드로 라인하르트식 방벽(체력 250)을 전방 60도에 전개한다. 전개 중엔 이동이 느려지고, 섬광방패는 전방 부채꼴을 즉시 제압한다.",
-      traits: [`좌클릭: 권총 · ${B.operators.bulwark.weapon.damage} 피해`, `우클릭 홀드: 방벽 전개 · 체력 ${B.operators.bulwark.barrier.maxHp} · 이동 -50%`, `SPACE: 전방 부채꼴 섬광방패 · 쿨다운 ${B.skills.cooldown}초`],
+      traits: [`좌클릭: 방패를 든 채 LMG 연사 · ${B.operators.bulwark.weapon.damage} 피해 · ${B.operators.bulwark.weapon.rpm} RPM`, `100발 탄창 · 넓은 탄퍼짐 · 예비탄 무한 · 시야각 ${B.vision.shieldViewDegrees}도`, `우클릭 홀드 + 좌클릭: 방벽을 유지하며 연속 사격`],
       controls: { primary: "권총", secondary: "방벽 홀드", ability: "섬광방패" },
       stats: { 화력: 2, 기동: 2, 생존: 5 },
       implemented: true,
