@@ -426,9 +426,8 @@ export class GameRoom extends DurableObject {
       const team = wanted && roomFor(wanted) ? wanted : roomFor("A") ? "A" : "B";
       const name = BOT_NAMES.find((n) => !room.members.some((m) => m.name === n))
         || `봇 ${room.members.length + 1}`;
-      // 직업은 무작위 — 매번 같은 병과만 나오면 연습이 단조롭다.
-      const pool = [...ALLOWED_CHARACTERS];
-      const characterId = pool[Math.floor(Math.random() * pool.length)];
+      // 봇은 항상 군인(SOLDIER) 병과만 사용한다.
+      const characterId = "soldier";
       room.members.push({
         id: crypto.randomUUID(), name, team, ready: true, characterId,
         token: null, connected: false, bot: true,
@@ -436,11 +435,6 @@ export class GameRoom extends DurableObject {
         dir: team === "A" ? 0 : Math.PI,
         kills: 0, damage: 0, shots: 0, hits: 0,
       });
-    } else if (data.action === "botcharacter" && member.id === room.hostId) {
-      // 방장이 봇의 직업을 바꾼다. 사람의 직업은 본인만 바꿀 수 있다.
-      const target = room.members.find((m) => m.id === data.value?.id && m.bot);
-      if (!target || !ALLOWED_CHARACTERS.has(data.value?.characterId)) return false;
-      target.characterId = data.value.characterId;
     } else if (data.action === "map" && member.id === room.hostId && ALLOWED_MAPS.has(data.value)) room.mapId = data.value;
     else if (data.action === "kick" && member.id === room.hostId && data.value !== room.hostId) {
       const index = room.members.findIndex((m) => m.id === data.value);

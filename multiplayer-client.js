@@ -929,151 +929,151 @@
 
 /* 대쉬 — 몸체 마커 + 뒤쪽 잔상 */
 const syncRemoteDash = (actor, entry, fx) => {
-  if (fx?.d && actor.alive) {
-    const colors = [0xffd166, 0x9ef0ff, 0x9bb5ff];
-    if (!entry.dash || entry.dashKind !== fx.d[0]) {
+    if (fx?.d && actor.alive) {
+      const colors = [0xffd166, 0x9ef0ff, 0x9bb5ff];
+      if (!entry.dash || entry.dashKind !== fx.d[0]) {
+        disposeMarker(entry.dash);
+        entry.dash = markerMesh(colors[fx.d[0]] || 0xffffff, 1.45, 0.24);
+        entry.dashKind = fx.d[0];
+      }
+      entry.dash.position.set(actor.pos.x, actor.pos.y, 12);
+      const back = fx.d[1] + Math.PI;
+      entry.dashGhosts ||= [
+        stripMesh(colors[fx.d[0]] || 0xffffff, 0.35),
+        stripMesh(colors[fx.d[0]] || 0xffffff, 0.2),
+      ];
+      entry.dashGhosts.forEach((strip, index) => {
+        const distance = 24 + index * 20;
+        const ox = actor.pos.x + Math.cos(back) * distance;
+        const oy = actor.pos.y + Math.sin(back) * distance;
+        placeStrip(strip, { x: ox - 9, y: oy }, { x: ox + 9, y: oy }, 6);
+      });
+    } else if (entry.dash) {
       disposeMarker(entry.dash);
-      entry.dash = markerMesh(colors[fx.d[0]] || 0xffffff, 1.45, 0.24);
-      entry.dashKind = fx.d[0];
+      entry.dash = null;
+      if (entry.dashGhosts) {
+        entry.dashGhosts.forEach(disposeStrip);
+        entry.dashGhosts = null;
+      }
     }
-    entry.dash.position.set(actor.pos.x, actor.pos.y, 12);
-    const back = fx.d[1] + Math.PI;
-    entry.dashGhosts ||= [
-      stripMesh(colors[fx.d[0]] || 0xffffff, 0.35),
-      stripMesh(colors[fx.d[0]] || 0xffffff, 0.2),
-    ];
-    entry.dashGhosts.forEach((strip, index) => {
-      const distance = 24 + index * 20;
-      const ox = actor.pos.x + Math.cos(back) * distance;
-      const oy = actor.pos.y + Math.sin(back) * distance;
-      placeStrip(strip, { x: ox - 9, y: oy }, { x: ox + 9, y: oy }, 6);
-    });
-  } else if (entry.dash) {
-    disposeMarker(entry.dash);
-    entry.dash = null;
-    if (entry.dashGhosts) {
-      entry.dashGhosts.forEach(disposeStrip);
-      entry.dashGhosts = null;
-    }
-  }
-};
-
-/* 시야 밖 효과는 삭제하지 않고 숨긴다 — 다시 시야에 들어오면 즉시 복원 */
-const setFxVisible = (effect, visible) => {
-  if (effect) effect.visible = visible;
-};
-
-const isEffectVisibleAt = (actor, point) => {
-  if (!actor?.alive) return false;
-  if (actor.team !== "enemy") return true;
-  const probe = {
-    pos: game.player.pos.clone().set(point.x, point.y),
-    alive: true,
-    radius: 2,
-    team: actor.team,
   };
-  return game.isVisible(game.player, probe, B.vision.coneDegrees, B.vision.maxRange);
-};
 
-const setRemoteEffectVisible = (actor, effect, alwaysVisible = false) => {
-  if (!effect) return;
-  effect.visible = actor.alive && (alwaysVisible || isEffectVisibleAt(actor, effect.position));
-};
+  /* 시야 밖 효과는 삭제하지 않고 숨긴다 — 다시 시야에 들어오면 즉시 복원 */
+  const setFxVisible = (effect, visible) => {
+    if (effect) effect.visible = visible;
+  };
 
-const syncRemoteReveal = (actor, entry, reveal) => {
-  if (!reveal) {
-    disposeMarker(entry.reveal);
-    entry.reveal = null;
-    for (const strip of entry.revealRings || []) disposeStrip(strip);
-    entry.revealRings = [];
-    return;
-  }
-  entry.reveal ||= markerMesh(0xff3b45, 1.65, 0.22);
-  entry.reveal.position.set(actor.pos.x, actor.pos.y, 11);
-  const range = Math.max(100, Math.min(1200, reveal[1] || B.operators.sentinel.reveal.range));
-  const segments = 32;
-  const radii = [range * 0.55, range];
-  entry.revealRings ||= [];
-  while (entry.revealRings.length < segments * radii.length) {
-    const strip = stripMesh(0xff5963, 0.42);
-    strip.userData.remoteFxOwner = actor;
-    entry.revealRings.push(strip);
-  }
-  entry.revealRings.forEach((strip, index) => {
-    const band = Math.floor(index / segments);
-    const segment = index % segments;
-    const radius = radii[band];
-    const angleA = segment / segments * Math.PI * 2;
-    const angleB = (segment + 1) / segments * Math.PI * 2;
-    placeStrip(strip, {
-      x: actor.pos.x + Math.cos(angleA) * radius,
-      y: actor.pos.y + Math.sin(angleA) * radius,
-    }, {
-      x: actor.pos.x + Math.cos(angleB) * radius,
-      y: actor.pos.y + Math.sin(angleB) * radius,
-    }, band ? 3.2 : 2.2);
-  });
-};
+  const isEffectVisibleAt = (actor, point) => {
+    if (!actor?.alive) return false;
+    if (actor.team !== "enemy") return true;
+    const probe = {
+      pos: game.player.pos.clone().set(point.x, point.y),
+      alive: true,
+      radius: 2,
+      team: actor.team,
+    };
+    return game.isVisible(game.player, probe, B.vision.coneDegrees, B.vision.maxRange);
+  };
 
-function syncRemoteFxVisibility() {
-  for (const [id, entry] of remoteFx) {
-    const actor = actors.get(id);
-    if (!actor) continue;
-    setRemoteEffectVisible(actor, entry.tongue);
-    setRemoteEffectVisible(actor, entry.dash);
-    setRemoteEffectVisible(actor, entry.scythe);
-    setRemoteEffectVisible(actor, entry.reveal);
-    setRemoteEffectVisible(actor, entry.gunKataPulse);
-    for (const effect of [
-      ...(entry.barrier || []), ...(entry.railCharge || []), ...(entry.revealRings || []),
-      ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
-    ]) setRemoteEffectVisible(actor, effect);
-    // Reaper summons are deliberate global information and ignore fog of war.
-    for (const summon of entry.summons || []) setRemoteEffectVisible(actor, summon, true);
-    // 스나이퍼 덫(반투명 깜빡이는 지뢰) — 아군·적군 모두에게 보인다(안개 무시).
-    // 아군: 연한 빨강(흐릿) 깜빡임 · 적(게스트): 선명한 빨강 깜빡임.
-    const trapCfgV = B.operators.sniper.trap;
-    const trapAlly = actor.team === game.player.team;
-    const trapColor = trapAlly ? trapCfgV.allyColor : trapCfgV.color;
-    const blink = 0.06 + Math.abs(Math.sin(performance.now() / 200)) * 0.14; // 0.06~0.20 깜빡임
-    for (const zone of entry.trapZones || []) {
-      setRemoteEffectVisible(actor, zone, true);
-      zone.material.color.setHex(trapColor);
-      zone.material.transparent = true;
-      zone.material.opacity = trapAlly ? blink * 0.7 : blink;
+  const setRemoteEffectVisible = (actor, effect, alwaysVisible = false) => {
+    if (!effect) return;
+    effect.visible = actor.alive && (alwaysVisible || isEffectVisibleAt(actor, effect.position));
+  };
+
+  const syncRemoteReveal = (actor, entry, reveal) => {
+    if (!reveal) {
+      disposeMarker(entry.reveal);
+      entry.reveal = null;
+      for (const strip of entry.revealRings || []) disposeStrip(strip);
+      entry.revealRings = [];
+      return;
     }
-    for (const body of entry.traps || []) {
-      setRemoteEffectVisible(actor, body, true);
-      body.material.color.setHex(trapColor);
-      body.material.transparent = true;
-      body.material.opacity = blink;
+    entry.reveal ||= markerMesh(0xff3b45, 1.65, 0.22);
+    entry.reveal.position.set(actor.pos.x, actor.pos.y, 11);
+    const range = Math.max(100, Math.min(1200, reveal[1] || B.operators.sentinel.reveal.range));
+    const segments = 32;
+    const radii = [range * 0.55, range];
+    entry.revealRings ||= [];
+    while (entry.revealRings.length < segments * radii.length) {
+      const strip = stripMesh(0xff5963, 0.42);
+      strip.userData.remoteFxOwner = actor;
+      entry.revealRings.push(strip);
     }
-    // 위험 구역 링 — 경계선도 함께 깜빡인다.
-    for (const ring of entry.trapRings || []) {
-      setRemoteEffectVisible(actor, ring, true);
-      ring.material.color.setHex(trapColor);
-      ring.material.opacity = (trapAlly ? 0.5 : 0.7) * (0.3 + Math.abs(Math.sin(performance.now() / 200)) * 0.7);
+    entry.revealRings.forEach((strip, index) => {
+      const band = Math.floor(index / segments);
+      const segment = index % segments;
+      const radius = radii[band];
+      const angleA = segment / segments * Math.PI * 2;
+      const angleB = (segment + 1) / segments * Math.PI * 2;
+      placeStrip(strip, {
+        x: actor.pos.x + Math.cos(angleA) * radius,
+        y: actor.pos.y + Math.sin(angleA) * radius,
+      }, {
+        x: actor.pos.x + Math.cos(angleB) * radius,
+        y: actor.pos.y + Math.sin(angleB) * radius,
+      }, band ? 3.2 : 2.2);
+    });
+  };
+
+  function syncRemoteFxVisibility() {
+    for (const [id, entry] of remoteFx) {
+      const actor = actors.get(id);
+      if (!actor) continue;
+      setRemoteEffectVisible(actor, entry.tongue);
+      setRemoteEffectVisible(actor, entry.dash);
+      setRemoteEffectVisible(actor, entry.scythe);
+      setRemoteEffectVisible(actor, entry.reveal);
+      setRemoteEffectVisible(actor, entry.gunKataPulse);
+      for (const effect of [
+        ...(entry.barrier || []), ...(entry.railCharge || []), ...(entry.revealRings || []),
+        ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
+      ]) setRemoteEffectVisible(actor, effect);
+      // Reaper summons are deliberate global information and ignore fog of war.
+      for (const summon of entry.summons || []) setRemoteEffectVisible(actor, summon, true);
+      // 스나이퍼 덫(반투명 깜빡이는 지뢰) — 아군·적군 모두에게 보인다(안개 무시).
+      // 아군: 연한 빨강(흐릿) 깜빡임 · 적(게스트): 선명한 빨강 깜빡임.
+      const trapCfgV = B.operators.sniper.trap;
+      const trapAlly = actor.team === game.player.team;
+      const trapColor = trapAlly ? trapCfgV.allyColor : trapCfgV.color;
+      const blink = 0.06 + Math.abs(Math.sin(performance.now() / 200)) * 0.14; // 0.06~0.20 깜빡임
+      for (const zone of entry.trapZones || []) {
+        setRemoteEffectVisible(actor, zone, true);
+        zone.material.color.setHex(trapColor);
+        zone.material.transparent = true;
+        zone.material.opacity = trapAlly ? blink * 0.7 : blink;
+      }
+      for (const body of entry.traps || []) {
+        setRemoteEffectVisible(actor, body, true);
+        body.material.color.setHex(trapColor);
+        body.material.transparent = true;
+        body.material.opacity = blink;
+      }
+      // 위험 구역 링 — 경계선도 함께 깜빡인다.
+      for (const ring of entry.trapRings || []) {
+        setRemoteEffectVisible(actor, ring, true);
+        ring.material.color.setHex(trapColor);
+        ring.material.opacity = (trapAlly ? 0.5 : 0.7) * (0.3 + Math.abs(Math.sin(performance.now() / 200)) * 0.7);
+      }
+      for (const grenade of entry.grenades?.values?.() || []) {
+        const visible = isEffectVisibleAt(actor, grenade.mesh.position);
+        setFxVisible(grenade.mesh, visible);
+        setFxVisible(grenade.trail, visible);
+        if (grenade.telegraph) grenade.telegraph.style.visibility = visible ? "" : "hidden";
+      }
     }
-    for (const grenade of entry.grenades?.values?.() || []) {
-      const visible = isEffectVisibleAt(actor, grenade.mesh.position);
-      setFxVisible(grenade.mesh, visible);
-      setFxVisible(grenade.trail, visible);
-      if (grenade.telegraph) grenade.telegraph.style.visibility = visible ? "" : "hidden";
+    for (const child of game.fxGroup.children) {
+      const owner = child.userData?.remoteFxOwner;
+      if (owner) setRemoteEffectVisible(owner, child);
+    }
+    for (const projectile of game.projectiles) {
+      const owner = projectile.source;
+      if (owner?._remote) projectile.mesh.visible = isEffectVisibleAt(owner, projectile.pos);
+    }
+    for (const smoke of game.smokes) {
+      const owner = smoke.owner;
+      if (owner?._remote) smoke.mesh.visible = isEffectVisibleAt(owner, smoke.pos);
     }
   }
-  for (const child of game.fxGroup.children) {
-    const owner = child.userData?.remoteFxOwner;
-    if (owner) setRemoteEffectVisible(owner, child);
-  }
-  for (const projectile of game.projectiles) {
-    const owner = projectile.source;
-    if (owner?._remote) projectile.mesh.visible = isEffectVisibleAt(owner, projectile.pos);
-  }
-  for (const smoke of game.smokes) {
-    const owner = smoke.owner;
-    if (owner?._remote) smoke.mesh.visible = isEffectVisibleAt(owner, smoke.pos);
-  }
-}
 
   function applyRemoteFx(playerId, fx) {
     const actor = actors.get(playerId);
