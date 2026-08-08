@@ -54,22 +54,22 @@
       },
       bulwark: {
         hp: 300,
-        weapon: { id: "shield_pistol", name: "SHIELD LMG", damage: 5, pellets: 1, rpm: 900, spreadDeg: 12, magSize: 100, reserve: 9999, reload: 2.5, range: 620, projectileSpeed: 1050, color: 0x7ea8ff },
+        weapon: { id: "shield_pistol", name: "SHIELD LMG", damage: 10, pellets: 1, rpm: 900, spreadDeg: 12, magSize: 100, reserve: 9999, reload: 2.5, range: 620, projectileSpeed: 1050, color: 0x7ea8ff },
         barrier: { duration: 3, cooldown: 10, halfAngleDeg: 60, inner: 55, outer: 100 },
         flashShield: { range: 260, halfAngleDeg: 120, duration: 1 },
       },
       sentinel: {
         hp: 100,
-        weapon: { id: "railgun", name: "RAILGUN", damage: 60, pellets: 1, rpm: 45, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 580, projectileSpeed: 1, color: 0x55f0b0 },
+        weapon: { id: "railgun", name: "RAILGUN", damage: 90, pellets: 1, rpm: 45, spreadDeg: 0, magSize: 6, reserve: 9999, reload: 2.5, range: 580, projectileSpeed: 1, color: 0x55f0b0 },
         railgun: { chargeTime: 1 },
         reveal: { range: 920, duration: 7, cooldown: 15 },
         // 우클릭 헤비 레이저: 레일건 충전(1초)의 3배(3초)를 들여 넓은 보라색 관통 레이저를 발사한다.
         // 피해는 40 — 멀티플레이 서버의 sentinel 피해 상한과 동일하게 맞춘다.
-        heavyLaser: { chargeTime: 3, damage: 120, halfWidth: 46, cooldown: 10, color: 0xb26cff },
+        heavyLaser: { chargeTime: 3, damage: 150, halfWidth: 46, cooldown: 10, color: 0xb26cff },
       },
       soldier: {
         hp: 200,
-        weapon: { id: "rifle", name: "ASSAULT RIFLE", damage: 12, pellets: 1, rpm: 420, spreadDeg: 4.5, magSize: 30, reserve: 9999, reload: 2.5, range: 1040, projectileSpeed: 1500, color: 0x6de6df },
+        weapon: { id: "rifle", name: "ASSAULT RIFLE", damage: 15, pellets: 1, rpm: 420, spreadDeg: 4.5, magSize: 30, reserve: 9999, reload: 2.5, range: 1040, projectileSpeed: 1500, color: 0x6de6df },
         // 우클릭 섬광탄: 개수 무제한, 쿨타임 5초.
         flashCooldown: 5,
         // SPACE 신체강화: 5초간 이동속도·피해 부스트. 쿨타임 20초.
