@@ -2770,6 +2770,9 @@
       if (["reaper", "ninja"].includes(selected.id)) {
         ui.ammo.textContent = "∞";
         ui.reserve.textContent = "∞";
+      } else if (selected.id === "frog") {
+        ui.ammo.textContent = `${this.player.ammo}`;
+        ui.reserve.textContent = "∞";
       } else if (this.player.reserve >= 9999) {
         // 무제한 장탄 무기는 9999 대신 현재 최대 장탄수를 표시한다. (예: 30/30)
         ui.reserve.textContent = `${this.player.weapon.magSize}`;

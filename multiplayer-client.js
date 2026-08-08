@@ -1228,6 +1228,7 @@ function syncRemoteFxVisibility() {
     if (message.type === "hit") {
       const actor = actors.get(message.targetId);
       if (actor) { actor.hp = message.hp; actor.alive = message.alive; actor.mesh.visible = message.alive; }
+      if (message.slowed) game?.showWaterDrips?.(actor || (message.targetId === playerId ? game.player : null));
       // 라이브 전적(딜량·킬) 갱신 — 결과창/관전 요약이 실시간으로 맞도록.
       if (room?.members) {
         const attackerMember = room.members.find((m) => m.id === message.attackerId);
@@ -1242,7 +1243,10 @@ function syncRemoteFxVisibility() {
       if (message.targetId === playerId && game) {
         game.showDamageDirection?.({ x: message.sourceX, y: message.sourceY });
         game.player.hp = message.hp; game.player.alive = message.alive;
-        if (message.slowed) { game._networkSlowUntil = performance.now() + 1000; game._networkSlowMult = 0.7; }
+        if (message.slowed) {
+          game._networkSlowUntil = performance.now() + B.operators.frog.waterSlow.duration * 1000;
+          game._networkSlowMult = B.operators.frog.waterSlow.moveScale;
+        }
         game.renderUi();
       }
     }

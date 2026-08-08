@@ -71,7 +71,8 @@
         enhance: { duration: 5, speedMult: 1.4, damageMult: 1.5, cooldown: 20 },
       },
       frog: {
-        weapon: { id: "frog", name: "FROG BUBBLE SPRAYER", damage: 4, pellets: 5, rpm: 300, spreadDeg: 12, magSize: 999, reserve: 9999, reload: 2.5, range: 900, projectileSpeed: 1200, color: 0x7eeeff },
+        weapon: { id: "frog", name: "FROG BUBBLE SPRAYER", damage: 4, pellets: 5, rpm: 300, spreadDeg: 12, magSize: 30, reserve: 9999, reload: 2.5, range: 900, projectileSpeed: 1200, color: 0x7eeeff },
+        waterSlow: { duration: 1, moveScale: 0.7 },
         bubble: { damage: 2, speed: 920, color: 0x83ffad, range: 334 }, // 수동/자동 비눗방울 (사거리 334 = 시야 920×0.33 + 30)
         autoBubbleInterval: 0.32,                                     // 벽 부착 중 자동 발사 간격
         attachedVisionRatio: 0.33,                                    // 벽 부착 시 시야 비율 (920×0.33≈304)

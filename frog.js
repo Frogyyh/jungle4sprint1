@@ -20,6 +20,9 @@
     const FROG_MOMENTUM_MAX = B.operators.frog.momentum.max;
     const FROG_MOMENTUM_DAMPING = B.operators.frog.momentum.damping;
     const AUTO_BUBBLE_INTERVAL = B.operators.frog.autoBubbleInterval;
+    const WATER_SLOW_DURATION = B.operators.frog.waterSlow.duration;
+    const WATER_SLOW_SCALE = B.operators.frog.waterSlow.moveScale;
+    const waterDrips = [];
     const AUTO_BUBBLE = {
       id: "frog-auto-bubble",
       name: "SWING BUBBLE",
@@ -35,6 +38,65 @@
       color: B.operators.frog.bubble.color,
     };
     const isFrog = () => game.activeOperatorId === "frog" || game.player.weapon?.id === "frog";
+
+    const disposeWaterDrip = (index) => {
+      const drip = waterDrips[index];
+      if (!drip) return;
+      drip.mesh.parent?.remove(drip.mesh);
+      drip.mesh.geometry?.dispose?.();
+      drip.mesh.material?.dispose?.();
+      waterDrips.splice(index, 1);
+    };
+
+    const showWaterDrips = (target) => {
+      if (!target?.pos) return;
+      if (game.now - (target._lastWaterDripAt ?? -Infinity) < 0.08) return;
+      target._lastWaterDripAt = game.now;
+      for (let index = 0; index < 10; index++) {
+        const mesh = game.player.body.clone(false);
+        mesh.geometry = game.player.body.geometry.clone();
+        mesh.material = game.player.body.material.clone();
+        mesh.material.color.setHex(index % 3 === 0 ? 0xd9fbff : index % 2 ? 0x73dfff : 0x38bdf8);
+        mesh.material.transparent = true;
+        mesh.material.depthWrite = false;
+        mesh.material.opacity = 0.88;
+        mesh.scale.set(0.09 + index % 3 * 0.025, 0.22 + index % 2 * 0.08, 1);
+        mesh.userData.remoteFxOwner = target._remote ? target : null;
+        const angle = index / 10 * Math.PI * 2 + Math.sin(index * 2.7) * 0.3;
+        const radius = 20 + index % 4 * 7;
+        const start = target.pos.clone().add(vec(Math.cos(angle) * radius, Math.sin(angle) * radius + 22));
+        mesh.position.set(start.x, start.y, 24);
+        mesh.rotation.z = angle - Math.PI / 2;
+        game.fxGroup.add(mesh);
+        waterDrips.push({
+          mesh,
+          start,
+          startedAt: game.now,
+          endAt: game.now + 0.55 + index % 3 * 0.08,
+          fall: 42 + index % 4 * 9,
+          sway: Math.sin(index * 1.9) * 10,
+        });
+      }
+    };
+    game.showWaterDrips = showWaterDrips;
+
+    const updateWaterDrips = () => {
+      for (let index = waterDrips.length - 1; index >= 0; index--) {
+        const drip = waterDrips[index];
+        if (game.now >= drip.endAt) {
+          disposeWaterDrip(index);
+          continue;
+        }
+        const progress = (game.now - drip.startedAt) / (drip.endAt - drip.startedAt);
+        drip.mesh.position.set(
+          drip.start.x + Math.sin(progress * Math.PI) * drip.sway,
+          drip.start.y - drip.fall * progress,
+          24 - progress * 8,
+        );
+        drip.mesh.material.opacity = 0.88 * (1 - progress);
+        drip.mesh.scale.x *= 0.995;
+      }
+    };
     let tongue = null;
     let canLaunchTongue = true;
     let spaceHeld = false;
@@ -357,6 +419,7 @@
       nextAutoBubbleAt = 0;
       autoBubbleCount = 0;
       frogMomentum.set(0, 0);
+      while (waterDrips.length) disposeWaterDrip(waterDrips.length - 1);
       originalStartRound();
       if (wantsFrog) {
         this.selectedWeapon = "frog";
@@ -433,6 +496,7 @@
         frogMomentum.multiplyScalar(Math.pow(damping, dt));
         if (frogMomentum.lengthSq() < 4) frogMomentum.set(0, 0);
       }
+      updateWaterDrips();
     };
 
     const originalIsVisible = game.isVisible.bind(game);
@@ -492,13 +556,14 @@
       const hpBefore = target.hp;
       originalDamageActor(source, target, amount);
       if (source === this.player && isFrog() && target.hp < hpBefore) {
-        target.slowUntil = this.now + 1;
+        target.slowUntil = this.now + WATER_SLOW_DURATION;
+        showWaterDrips(target);
       }
     };
 
     const originalMoveBot = game.moveBot.bind(game);
     game.moveBot = function moveSlowedBot(bot, dt, direction) {
-      const slowFactor = bot.slowUntil > this.now ? 0.7 : 1;
+      const slowFactor = bot.slowUntil > this.now ? WATER_SLOW_SCALE : 1;
       originalMoveBot(bot, dt * slowFactor, direction);
     };
 
