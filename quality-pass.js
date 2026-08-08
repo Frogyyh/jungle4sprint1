@@ -265,8 +265,6 @@
     };
 
     game.applyWeaponVisual = applyWeaponVisual;
-    game.weaponVisualIds = Object.keys(weaponVisualProfiles);
-    game.canvas.dataset.weaponVisuals = game.weaponVisualIds.join(",");
 
     const styleGrenadeMesh = (grenade) => {
       const mesh = grenade.mesh;
@@ -520,30 +518,7 @@
       ui.throwVector.classList.remove("active");
     };
 
-    const selectGadget = (type) => {
-      const count = game.getGadgetCount
-        ? game.getGadgetCount(type)
-        : type === "flash" ? game.player.flashGrenades : game.player.smokeGrenades;
-      if (count <= 0) {
-        game.showToast(`${type.toUpperCase()} EMPTY`);
-        clearGadget();
-        return;
-      }
-      if (game._selectedGadget === type) {
-        clearGadget();
-        game.showToast("PRIMARY READY");
-        return;
-      }
-      game.mouse.down = false;
-      game._selectedGadget = type;
-      ui.flashGadget.classList.toggle("selected", type === "flash");
-      ui.smokeGadget.classList.toggle("selected", type === "smoke");
-      ui.fragGadget?.classList.toggle("selected", type === "frag");
-      ui.chargeName.textContent = `${type.toUpperCase()} THROW`;
-      game.showToast(`${type.toUpperCase()} EQUIPPED`);
-    };
     game.clearGadget = clearGadget;
-    game.selectGadget = selectGadget;
 
     // 피격판정 통일: 모든 캐릭터가 동일한 원형 히트박스(반경 20)를 사용한다.
     // 코어 기본값(18)보다 시각 스프라이트(55px)에 근접해 피격 감각이 원활하다.
@@ -997,18 +972,11 @@
         game.showToast("PRIMARY READY");
         return;
       }
-      // 투척물 스킬은 모두 우클릭으로 옮겨졌다(operator-system.js). 2번키 선택은 비활성화한다.
-      const gadgetByKey = {};
+      // 투척물 스킬은 모두 우클릭으로 옮겨졌다(operator-system.js). 2~4번키는 예약만 유지한다.
       if (["Digit2", "Digit3", "Digit4"].includes(event.code)) {
         event.preventDefault();
         event.stopImmediatePropagation();
       }
-      const gadgetType = gadgetByKey[event.code];
-      if (!gadgetType) return;
-      if (game.canUseGadget && !game.canUseGadget(gadgetType)) {
-        return;
-      }
-      selectGadget(gadgetType);
     }, true);
 
     game.canvas.addEventListener("pointerdown", (event) => {

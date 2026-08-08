@@ -15,7 +15,6 @@ let room = null;
 let socket = null;
 let picked = null;
 let kickTarget = null;
-let charTarget = null; // 직업을 고르는 대상 — null 이면 나, 아니면 그 봇
 const mine = () => room?.members.find((member) => member.id === session.playerId);
 const isHost = () => room?.hostId === session.playerId;
 const perTeam = () => (room?.capacity || 2) / 2;
@@ -70,16 +69,6 @@ function renderSlots() {
       ready.className = member.id === room.hostId || member.ready ? "slot-ready on" : "slot-ready off";
       ready.textContent = member.id === room.hostId ? "HOST" : member.ready ? "READY" : "WAIT";
       slot.append(portrait, info, ready);
-
-      // 방장은 봇 자리를 눌러 직업을 바꾼다.
-      if (isHost() && member.bot) {
-        slot.classList.add("slot-clickable");
-        slot.title = "눌러서 직업 변경";
-        slot.addEventListener("click", (event) => {
-          if (event.target.closest(".slot-kick")) return; // 내보내기 버튼은 예외
-          openCharacterPicker(member);
-        });
-      }
 
       /* 내보내기는 READY 표시 위에 1초 머물러야 나타난다.
          지나가다 스치는 것으로 뜨면 실수로 누르기 쉽다. */
@@ -215,13 +204,12 @@ charRow.addEventListener("click", (event) => {
 });
 el("char-back").addEventListener("click", showCharacterList);
 
-/* 직업 선택 창은 두 가지로 쓰인다 — 내 직업(charTarget = null)과
-   방장이 고르는 봇의 직업(charTarget = 그 봇). */
-function openCharacterPicker(member = null) {
-  charTarget = member;
-  picked = (member || mine())?.characterId || null;
+/* 내 캐릭터 선택 창. 봇의 직업 변경은 제거되었고(봇은 항상 SOLDIER),
+   방장 포함 모든 참가자가 자신의 캐릭터만 선택한다. */
+function openCharacterPicker() {
+  picked = mine()?.characterId || null;
   el("char-confirm").disabled = !picked;
-  el("char-modal-who").textContent = member ? `${member.name} 의 직업` : "캐릭터 선택";
+  el("char-modal-who").textContent = "캐릭터 선택";
   showCharacterList();
   charModal.classList.remove("hidden");
 }
@@ -229,11 +217,7 @@ function openCharacterPicker(member = null) {
 el("open-char").addEventListener("click", () => openCharacterPicker());
 el("char-cancel").addEventListener("click", () => charModal.classList.add("hidden"));
 el("char-confirm").addEventListener("click", () => {
-  if (picked) {
-    if (charTarget) sendAction(socket, "botcharacter", { id: charTarget.id, characterId: picked });
-    else sendAction(socket, "character", picked);
-  }
-  charTarget = null;
+  if (picked) sendAction(socket, "character", picked);
   charModal.classList.add("hidden");
 });
 
