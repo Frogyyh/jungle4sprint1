@@ -16,14 +16,32 @@ const ALLOWED_PROJECTILES = new Set([
 /* 병과별 단일 히트 피해 상한 — 클라이언트 balance.js 의 무기/스킬 데미지와 일치시킨다.
    (건슬링거 건카타 50, 센티널 레일건 40, 군인 35, 개구리 18, ...) */
 const DAMAGE_LIMITS = {
-  gunslinger: 50, bulwark: 45, sentinel: 40, soldier: 35, frog: 18,
-  reaper: 48, hunter: 55, ninja: 65, sniper: 100, demolitionist: 85,
+  gunslinger: 50, bulwark: 45, sentinel: 100, soldier: 35, frog: 20,
+  reaper: 80, hunter: 55, ninja: 60, sniper: 100, demolitionist: 100,
 };
 const CHARACTER_HP = Object.freeze({
   gunslinger: 150, bulwark: 300, sentinel: 100, soldier: 200, frog: 150,
   reaper: 200, hunter: 200, ninja: 150, sniper: 100, demolitionist: 150,
 });
 const maxHpFor = (characterId) => CHARACTER_HP[characterId] || 100;
+const HEALTH_REGEN_DELAY_MS = 5000;
+const HEALTH_REGEN_PER_MS = 5 / 1000;
+
+const applyHealthRegen = (member, now = Date.now()) => {
+  if (!member?.alive) return;
+  const maxHp = maxHpFor(member.characterId);
+  member.hp = Math.max(0, Math.min(maxHp, Number(member.hp) || 0));
+  if (member.hp >= maxHp) {
+    member.lastRegenAt = now;
+    return;
+  }
+  const regenStartsAt = (member.lastDamageAt || now) + HEALTH_REGEN_DELAY_MS;
+  const regenFrom = Math.max(regenStartsAt, member.lastRegenAt || regenStartsAt);
+  if (now > regenFrom) {
+    member.hp = Math.min(maxHp, member.hp + (now - regenFrom) * HEALTH_REGEN_PER_MS);
+  }
+  member.lastRegenAt = now;
+};
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
@@ -501,6 +519,7 @@ export class GameRoom extends DurableObject {
     member.x = Math.max(-1200, Math.min(1200, x));
     member.y = Math.max(-700, Math.min(700, y));
     member.dir = dir; member.lastStateAt = now;
+    applyHealthRegen(member, now);
     // 명중률을 내려면 발사 수가 필요한데 서버는 총알을 모른다. 클라이언트가 세어 보낸다.
     const shots = Number(data.shots);
     if (Number.isFinite(shots) && shots > (member.shots || 0)) member.shots = Math.min(9999, Math.floor(shots));
@@ -602,6 +621,7 @@ export class GameRoom extends DurableObject {
     attacker.lastHitAt = now;
     const maxDamage = DAMAGE_LIMITS[attacker.characterId] || 40;
     const damage = Math.max(1, Math.min(maxDamage, Number(data.damage) || 1));
+    applyHealthRegen(target, now);
     const recentSkillState = now - (target.skillFxAt || 0) < 250;
     if (target.characterId === "hunter" && recentSkillState && target.skillFx?.d?.[0] === 1) return;
     if (target.characterId === "bulwark" && recentSkillState && target.barrierActive && target.barrierHp > 0) {
@@ -618,6 +638,8 @@ export class GameRoom extends DurableObject {
     const dealt = Math.min(damage, target.hp);
     target.hp = Math.max(0, target.hp - damage);
     target.alive = target.hp > 0;
+    target.lastDamageAt = now;
+    target.lastRegenAt = now;
     // 결과창 전적 — 실제로 깎인 체력만 딜량으로 센다.
     attacker.hits = (attacker.hits || 0) + 1;
     attacker.damage = (attacker.damage || 0) + dealt;

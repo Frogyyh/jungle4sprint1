@@ -1183,8 +1183,8 @@ const syncRemoteDash = (actor, entry, fx) => {
     const direction = actor.pos.clone().set(Math.cos(message.dir), Math.sin(message.dir));
     actor.dir = message.dir;
     const specialWeapons = {
-      dagger: { ...actor.weapon, id: "dagger", damage: 15, pellets: 1, range: 720, projectileSpeed: 1050, color: 0xdffcff },
-      "frog-auto-bubble": { ...actor.weapon, id: "frog-auto-bubble", damage: 2, pellets: 1, range: 334, projectileSpeed: 920, color: 0x83ffad },
+      dagger: { ...actor.weapon, id: "dagger", damage: B.operators.ninja.dagger.damage, pellets: 1, range: 720, projectileSpeed: 1050, color: 0xdffcff },
+      "frog-auto-bubble": { ...actor.weapon, id: "frog-auto-bubble", damage: B.operators.frog.bubble.damage, pellets: 1, range: 334, projectileSpeed: 920, color: 0x83ffad },
     };
     game.spawnProjectile(actor, origin, direction, specialWeapons[message.weaponId] || actor.weapon);
     // The auto-bubble already has its own round projectile. The generic yellow

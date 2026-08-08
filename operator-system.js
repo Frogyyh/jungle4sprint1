@@ -399,7 +399,10 @@
       projectile.mesh.material.opacity = 0.48 + Math.random() * 0.22;
       projectile.mesh.material.depthWrite = false;
       projectile.mesh.rotation.z = 0;
-      projectile.mesh.scale.setScalar(0.24 + Math.random() * 0.22);
+      const isAutoBubble = weapon?.id === "frog-auto-bubble";
+      projectile.mesh.scale.setScalar(isAutoBubble
+        ? 0.58 + Math.random() * 0.24
+        : 0.24 + Math.random() * 0.22);
       projectile.velocity.multiplyScalar(0.88 + Math.random() * 0.24);
       projectile.remaining *= 0.92 + Math.random() * 0.16;
       projectile.isSoapBubble = true;
@@ -1608,7 +1611,8 @@
         return;
       }
       beginCooldown("daggers", 1); // 수리검 딜레이 1초
-      const weapon = { id: "dagger", name: "DAGGER", damage: 15, pellets: 1, rpm: 1, spreadDeg: 0, magSize: 1, reserve: 1, reload: 1, range: 720, projectileSpeed: 1050, color: 0xdffcff };
+      const dagger = B.operators.ninja.dagger;
+      const weapon = { id: "dagger", name: "DAGGER", damage: dagger.damage, pellets: 1, rpm: 1, spreadDeg: 0, magSize: 1, reserve: 1, reload: 1, range: dagger.range, projectileSpeed: dagger.speed, color: 0xdffcff };
       for (const offset of [-0.08, 0, 0.08]) {
         const angle = game.player.dir + offset;
         const dir = vector(Math.cos(angle), Math.sin(angle));
@@ -1782,7 +1786,7 @@
         if (game.rayBlocked(thrown.pos, bot.pos)) continue; // 벽 너머 타격 금지
         thrown.hit.add(bot);
         game.player.hits++;
-        game.damageActor(game.player, bot, WEAPONS.reaper.damage);
+        game.damageActor(game.player, bot, B.operators.reaper.scytheThrow.damage);
         createWorldStrip(thrown.pos.clone(), bot.pos.clone(), 4, 0xc59bff, { duration: 0.18, opacity: 0.85 });
       }
     };
@@ -2017,6 +2021,7 @@
         if (!bot.alive || bot.team === game.player.team) continue;
         if (bot.pos.distanceTo(net.pos) > NET_VISUAL_RADIUS + bot.radius) continue;
         if (game.rayBlocked(net.pos, bot.pos)) continue;
+        game.damageActor(game.player, bot, NET.damage);
         game.applyControlEffect(bot, NET.slowMult, NET.slowDuration);
         createPulseDisc(bot, 42, NET.color, 0.5, 0.22);
         createRangeRing(bot, 34, NET.color, 0.6, 0.72);
