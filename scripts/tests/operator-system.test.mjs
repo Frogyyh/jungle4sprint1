@@ -51,15 +51,39 @@ test("startRound(bulwark) 는 방벽을 balance.js 상수로 초기화한다", (
   selectOperator(game, "bulwark");
 
   assert.equal(game._barrier.active, false);
-  assert.equal(game._barrier.hp, 250);
-  assert.equal(game._barrier.regenAt, 0);
-  assert.equal(game._barrier.disabledUntil, 0);
+  assert.equal(game._barrier.activeUntil, 0);
+});
+
+test("아이언 방벽 쿨다운은 우클릭(secondary) 슬롯에 반영된다", () => {
+  const { game } = bootOperatorSystem();
+  selectOperator(game, "bulwark");
+  game._operatorCooldowns.barrier = game.now + 10;
+
+  game.renderUi();
+  assert.equal(game.canvas.dataset.secondaryCooldown, "10.00", "방벽 10초 쿨다운이 표시되어야 한다");
+});
+
+test("장탄수는 (현재)/(최대장탄수) 로 표시하고 예비 탄약을 쓰지 않는다", () => {
+  const { game, context } = bootOperatorSystem();
+  selectOperator(game, "soldier"); // rifle magSize 30
+  game.player.ammo = 5;
+
+  game.renderUi();
+  assert.equal(context.document.querySelector("#ammo").textContent, "5");
+  assert.equal(context.document.querySelector("#reserve").textContent, "30", "예비가 아닌 최대 장탄수 표시");
+
+  // 근접 병과는 무한 표시
+  selectOperator(game, "reaper");
+  game.renderUi();
+  assert.equal(context.document.querySelector("#ammo").textContent, "∞");
+  assert.equal(context.document.querySelector("#reserve").textContent, "∞");
 });
 
 test("방벽 시각화는 balance.js 의 inner/outer 를 그대로 쓴다", () => {
   const { game } = bootOperatorSystem();
   selectOperator(game, "bulwark");
   game._barrier.active = true;
+  game._barrier.activeUntil = 10;
   game.now = 5;
   game.player.pos.set(0, 0, 0);
   game.player.dir = 0;

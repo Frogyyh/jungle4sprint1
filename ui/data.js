@@ -49,7 +49,8 @@ export function findMap(id) {
 
 /** 실제 월드 오브젝트 좌표와 크기를 그대로 축소한 SVG 미니맵. */
 export function mapPreview(map, width = 460) {
-  const W = MAP_DATA.world.width;
+  // 맵 직사각형 + 좌/우 맵 밖 스폰 구역까지 포함한 폭
+  const W = MAP_DATA.world.width + MAP_DATA.spawnDepth * 2;
   const H = MAP_DATA.world.height;
   const colors = map.theme;
   const fills = {

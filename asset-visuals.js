@@ -49,8 +49,8 @@
         { texture: "pistol-r.png", x: 7, y: 25, width: 25, height: 15, rotation: Math.PI / 2, gunSide: 1 },
       ],
       shield_pistol: [
-        // 방패 이미지는 방벽(벡터 도형) 메커니즘으로 대체되어 제거됨. 권총만 표시.
-        { texture: "pistol-r.png", x: -2, y: 34, width: 23, height: 14, rotation: Math.PI / 2, hand: "right" },
+        // 총구 끝(y+height/2)이 코어 발사 지점에 맞도록 LMG를 중앙 정렬한다.
+        { texture: "lmg.png", x: 0, y: 31, width: 48, height: 22, rotation: Math.PI / 2, hand: "right" },
       ],
       railgun: [
         { texture: "railgun.png", x: 0, y: 33, width: 55, height: 25, rotation: Math.PI / 2 },

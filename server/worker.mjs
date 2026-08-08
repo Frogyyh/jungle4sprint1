@@ -309,7 +309,7 @@ export class GameRoom extends DurableObject {
     const host = {
       id: crypto.randomUUID(), name: cleanText(input.nickname, 12), team: "A",
       ready: true, characterId: "soldier", token: hostToken,
-      connected: false, hp: maxHpFor("soldier"), alive: true, x: -520, y: 0, dir: 0,
+      connected: false, hp: maxHpFor("soldier"), alive: true, x: -1450, y: 0, dir: 0,
       kills: 0, damage: 0, shots: 0, hits: 0, lastActiveAt: now,
     };
     const room = {
@@ -340,7 +340,7 @@ export class GameRoom extends DurableObject {
     const member = {
       id: crypto.randomUUID(), name: nickname, team, ready: false,
       characterId: "soldier", token: token(), connected: false,
-      hp: maxHpFor("soldier"), alive: true, x: team === "A" ? -520 : 520, y: 0,
+      hp: maxHpFor("soldier"), alive: true, x: team === "A" ? -1450 : 1450, y: 0,
       dir: team === "A" ? 0 : Math.PI,
       kills: 0, damage: 0, shots: 0, hits: 0, lastActiveAt: Date.now(),
     };
@@ -471,7 +471,7 @@ export class GameRoom extends DurableObject {
       room.members.push({
         id: crypto.randomUUID(), name, team, ready: true, characterId,
         token: null, connected: false, bot: true,
-        hp: maxHpFor(characterId), alive: true, x: team === "A" ? -520 : 520, y: 0,
+        hp: maxHpFor(characterId), alive: true, x: team === "A" ? -1450 : 1450, y: 0,
         dir: team === "A" ? 0 : Math.PI,
         kills: 0, damage: 0, shots: 0, hits: 0,
       });
@@ -493,7 +493,7 @@ export class GameRoom extends DurableObject {
         const offset = (teamOffsets[player.team]++ - 1) * 85;
         player.hp = maxHpFor(player.characterId); player.alive = true;
         clearStats(player); // 새 판이니 전적도 새로 센다
-        player.x = player.team === "A" ? -520 : 520;
+        player.x = player.team === "A" ? -1450 : 1450;
         player.y = offset; player.dir = player.team === "A" ? 0 : Math.PI;
       }
     } else return false;
@@ -516,7 +516,7 @@ export class GameRoom extends DurableObject {
     if (member.lastStateAt && now - member.lastStateAt < 35) return;
     const x = Number(data.x); const y = Number(data.y); const dir = Number(data.dir);
     if (![x, y, dir].every(Number.isFinite)) return;
-    member.x = Math.max(-1200, Math.min(1200, x));
+    member.x = Math.max(-1600, Math.min(1600, x));
     member.y = Math.max(-700, Math.min(700, y));
     member.dir = dir; member.lastStateAt = now;
     applyHealthRegen(member, now);
@@ -527,13 +527,7 @@ export class GameRoom extends DurableObject {
     member.skillFx = fx;
     member.skillFxAt = now;
     if (member.characterId === "bulwark") {
-      if (fx?.b) {
-        if (!member.barrierActive) member.barrierHp = 250;
-        member.barrierActive = true;
-        member.barrierHp = Math.min(member.barrierHp ?? 250, fx.b[0]);
-      } else {
-        member.barrierActive = false;
-      }
+      member.barrierActive = Boolean(fx?.b?.[0]);
     }
     await this.persistRealtime(room);
     this.broadcast(room, { type: "state", player: publicMember(member), fx }, ws);
@@ -624,14 +618,12 @@ export class GameRoom extends DurableObject {
     applyHealthRegen(target, now);
     const recentSkillState = now - (target.skillFxAt || 0) < 250;
     if (target.characterId === "hunter" && recentSkillState && target.skillFx?.d?.[0] === 1) return;
-    if (target.characterId === "bulwark" && recentSkillState && target.barrierActive && target.barrierHp > 0) {
+    if (target.characterId === "bulwark" && recentSkillState && target.barrierActive) {
       const attackAngle = Math.atan2(attacker.y - target.y, attacker.x - target.x);
       const delta = Math.atan2(Math.sin(attackAngle - target.dir), Math.cos(attackAngle - target.dir));
       if (Math.abs(delta) <= Math.PI / 6) {
-        target.barrierHp = Math.max(0, target.barrierHp - damage);
-        if (target.barrierHp <= 0) target.barrierActive = false;
         await this.persistRealtime(room);
-        this.broadcast(room, { type: "barrier", playerId: target.id, hp: target.barrierHp, damage });
+        this.broadcast(room, { type: "barrier", playerId: target.id, active: true, damage });
         return;
       }
     }

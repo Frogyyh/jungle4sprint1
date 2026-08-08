@@ -444,8 +444,7 @@
       if (wantsFrogWeapon) {
         ctx.selectedWeapon = "frog";
         ctx.player.weapon = FROG;
-        ctx.player.ammo = FROG.magSize;
-        ctx.player.reserve = FROG.reserve;
+      ctx.player.ammo = FROG.magSize;
         applyAppearance(true);
         ctx.renderUi();
         ctx.showToast("FROG READY — LMB WATER / SPACE TONGUE");
@@ -685,11 +684,9 @@
       return null;
     };
 
-    // 아이언 방벽 (라인하르트식): 우클릭 홀드로 전방 60도 부채꼴 방벽 전개
-    const BARRIER_MAX_HP = B.operators.bulwark.barrier.maxHp;
-    const BARRIER_REGEN_DELAY = B.operators.bulwark.barrier.regenDelay; // 해제 후 1초 뒤부터 재생
-    const BARRIER_REGEN_RATE = B.operators.bulwark.barrier.regenRate; // 초당 재생량
-    const BARRIER_BREAK_COOLDOWN = B.operators.bulwark.barrier.breakCooldown; // 파괴 시 재사용 불가 시간
+    // 아이언 방벽: 우클릭으로 전방 60도 부채꼴 방벽을 전개 (3초 무적 · 10초 쿨다운)
+    const BARRIER_DURATION = B.operators.bulwark.barrier.duration;
+    const BARRIER_COOLDOWN = B.operators.bulwark.barrier.cooldown;
     const BARRIER_HALF_ANGLE = B.operators.bulwark.barrier.halfAngleDeg * Math.PI / 360; // 전방 60도 (좌우 30도)
     const BARRIER_INNER = B.operators.bulwark.barrier.inner; // 방벽은 캐릭터로부터 약 75 거리에 전개
     const BARRIER_OUTER = B.operators.bulwark.barrier.outer;
@@ -737,7 +734,7 @@
        스킬 로직은 팀원이 직업별로 채우므로, 값이 바뀌면 balance.js 만 맞추면 여기도 따라간다. */
     const SLOT_COOLDOWN_TOTALS = {
       gunslinger: { secondary: B.operators.gunslinger.spray.cooldown, ability: B.operators.gunslinger.gunKata.cooldown },
-      bulwark: { secondary: 0, ability: SPECIAL_COOLDOWN },
+      bulwark: { secondary: BARRIER_COOLDOWN, ability: SPECIAL_COOLDOWN },
       sentinel: { secondary: B.operators.sentinel.heavyLaser.cooldown, ability: B.operators.sentinel.reveal.cooldown },
       soldier: { secondary: B.operators.soldier.flashCooldown, ability: B.operators.soldier.enhance.cooldown },
       frog: { secondary: 0, ability: 0 },
@@ -871,7 +868,6 @@
         const weapon = WEAPONS[selected.id] || WEAPONS.soldier;
         game.player.weapon = weapon;
         game.player.ammo = weapon.magSize;
-        game.player.reserve = weapon.reserve;
       }
       // 폭탄마 수류탄·군인 섬광탄은 개수 무제한(∞), 스나이퍼 연막탄은 제거됨.
       game.player.fragGrenades = selected.id === "demolitionist" ? Infinity : 0;
@@ -1301,6 +1297,11 @@
       createBurstParticle(grenade.pos, 0xffffff, vector(), 0.78, 0.16, 1);
     };
 
+    // 코어 연막 메시 기본 폭(= 기본 반지름). 스모크 메시는 radius/150 로 스케일된다.
+    const SMOKE_BASE = 150;
+    // 연막 경계 외곽선 — 지형과 구분되는 색으로 범위 경계를 명확히 표시한다.
+    const SMOKE_RING_COLOR = 0xfff2b0;
+
     const styleSmokeCloud = (smoke) => {
       if (!smoke?.mesh || smoke.mesh.userData?.breachlineSmokeCluster) return;
       game.canvas.dataset.lastDetonationFx = "smoke-cluster";
@@ -1309,11 +1310,13 @@
       smoke.mesh.material.transparent = true;
       smoke.mesh.material.opacity = 0.06;
       smoke.mesh.material.depthWrite = false;
-      // 3계층 퍼프: 중앙 코어(밝음) → 중간층 → 외곽 림(가장자리 강조)
+      // 3계층 퍼프: 중앙 코어(밝음) → 중간층 → 외곽 림(가장자리 강조).
+      // 퍼프는 스모크 메시(radius/150 로 스케일)의 자식이므로, 반경 밖으로 새지 않도록
+      // 기본 단위(SMOKE_BASE=150) 안에서만 배치한다.
       const layers = [
-        { count: 4, distance: (i) => smoke.radius * (0.08 + i * 0.05), scale: (i) => 0.34 - i * 0.02, color: 0x7d97a1, opacity: 0.42 },
-        { count: 8, distance: (i) => smoke.radius * (0.34 + i * 0.06), scale: (i) => 0.3 - i * 0.015, color: 0x5a7480, opacity: 0.34 },
-        { count: 10, distance: (i) => smoke.radius * (0.62 + i * 0.035), scale: (i) => 0.26 - i * 0.01, color: 0x8ba3ab, opacity: 0.4 },
+        { count: 4, distance: (i) => SMOKE_BASE * (0.08 + i * 0.05), scale: (i) => 0.34 - i * 0.02, color: 0x7d97a1, opacity: 0.42 },
+        { count: 8, distance: (i) => SMOKE_BASE * (0.34 + i * 0.06), scale: (i) => 0.3 - i * 0.015, color: 0x5a7480, opacity: 0.34 },
+        { count: 10, distance: (i) => SMOKE_BASE * (0.62 + i * 0.035), scale: (i) => 0.26 - i * 0.01, color: 0x8ba3ab, opacity: 0.4 },
       ];
       let puffIndex = 0;
       layers.forEach((layer, layerIndex) => {
@@ -1364,7 +1367,10 @@
       }
       if (grenade.type === "flash") showFlashBurst(grenade);
       if (grenade.type === "smoke" && ctx.smokes.length > smokeCount) {
-        styleSmokeCloud(ctx.smokes[ctx.smokes.length - 1]);
+        const smoke = ctx.smokes[ctx.smokes.length - 1];
+        styleSmokeCloud(smoke);
+        // 연막 경계 외곽선 — 지형과 다른 색으로 범위 경계를 명확히 표시 (연막 유지 시간 동안)
+        createRangeRing({ pos: smoke.pos }, smoke.radius, SMOKE_RING_COLOR, Math.max(0.5, smoke.endAt - ctx.now), 0.5);
       }
       disposeFxMesh(grenade.mesh);
     });
@@ -2722,16 +2728,6 @@
     };
 
     game.canvas.addEventListener("pointerdown", (event) => {
-      if (event.button === 0 && game.phase === "playing" && isOperator("bulwark") && game._barrier?.active) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        game.mouse.x = event.clientX;
-        game.mouse.y = event.clientY;
-        game.mouse.down = true;
-        game.updateMouseWorld();
-        game.fire(game.player, game.player.dir);
-        return;
-      }
       if (event.button !== 2 || game.phase !== "playing") return;
       if (isOperator("frog")) return;
       event.preventDefault();
@@ -2753,7 +2749,7 @@
         game._railNeedsRelease = false;
         if (isOperator("sentinel")) game.player.ring.material.color.setHex(0x55f0b0);
       }
-      if (event.button === 2) { releaseBarrier(); releaseHeavyLaser(); }
+      if (event.button === 2) releaseHeavyLaser();
     });
     window.addEventListener("keydown", (event) => {
       if (event.code !== "Space" || event.repeat || game.phase !== "playing" || isOperator("frog")) return;
@@ -2768,7 +2764,6 @@
       if (target === ctx.player && ctx._operatorDash?.invulnerable) return;
       // 아이언 방벽: 전방 공격(투사체·히트스캔)을 방벽 체력으로 흡수한다.
       if (target === ctx.player && isOperator("bulwark") && source?.pos && barrierBlocks(source.pos, target.pos)) {
-        absorbBarrierDamage(amount);
         ctx.canvas.dataset.lastBarrierBlock = `${Math.round(ctx.now * 100) / 100}:${amount}`;
         return;
       }
@@ -3199,7 +3194,7 @@
     // (다른 플레이어가 "섬광에 맞았다 + 얼마나 남았는지"를 식별할 수 있다)
     const FLASH_HALO_DOTS = 12;
     const FLASH_HALO_RADIUS = 27;
-    const FLASH_HALO_DURATION = 1; // 섬광탄 지속 시간(초) 기준
+    const FLASH_HALO_DURATION = B.gadgets.flash.duration; // 섬광탄 지속 시간(초) 기준
     const flashHalos = new Map(); // actor -> { group, dots }
 
     const ensureFlashHalo = (actor) => {
@@ -3226,7 +3221,7 @@
     };
 
     // ---- 아이언 방벽 (벡터 도형) ----
-    // 상태: game._barrier = { active, hp, regenAt, disabledUntil, mesh }
+    // 상태: game._barrier = { active, activeUntil }
     const barrierVisual = { group: null, fan: [], arc: [], edges: [] };
 
     const ensureBarrierVisual = () => {
@@ -3281,10 +3276,9 @@
       if (!visible) return;
       const origin = game.player.pos;
       const dir = game.player.dir;
-      const hpFrac = clamp(barrier.hp / BARRIER_MAX_HP, 0, 1);
-      // 피해 비례: 방벽이 약해지면 호가 붉게 물든다
+       const hpFrac = 1;
       for (const strip of [...barrierVisual.fan, ...barrierVisual.arc, ...barrierVisual.edges]) {
-        strip.material.color.setHex(hpFrac > 0.35 ? 0x9bd0ff : 0xff8a7a);
+         strip.material.color.setHex(0x9bd0ff);
       }
       const fanCount = barrierVisual.fan.length;
       barrierVisual.fan.forEach((strip, index) => {
@@ -3318,12 +3312,9 @@
     const resetBarrier = () => {
       game._barrier = {
         active: false,
-        hp: BARRIER_MAX_HP,
-        regenAt: 0,
-        disabledUntil: 0,
+        activeUntil: 0,
       };
       if (barrierVisual.group) barrierVisual.group.visible = false;
-      game.canvas.dataset.barrierHp = String(BARRIER_MAX_HP);
       game.canvas.dataset.barrierState = "ready";
     };
 
@@ -3331,55 +3322,25 @@
     const deployBarrier = () => {
       if (!isOperator("bulwark")) return;
       const barrier = game._barrier;
-      if (game.now < barrier.disabledUntil) {
-        game.showToast(`BARRIER ${Math.ceil(barrier.disabledUntil - game.now)}s`);
+      if (!abilityReady("barrier")) {
+        game.showToast(`BARRIER ${cooldownRemaining("barrier").toFixed(1)}s`);
         return;
       }
       if (barrier.active) return;
       barrier.active = true;
+      barrier.activeUntil = game.now + BARRIER_DURATION;
+      beginCooldown("barrier", BARRIER_COOLDOWN);
       game.canvas.dataset.barrierState = "active";
+      syncBarrierVisual();
       game.showToast("BARRIER DEPLOYED");
     };
 
-    const releaseBarrier = () => {
-      const barrier = game._barrier;
-      if (!barrier || !barrier.active) return;
-      barrier.active = false;
-      barrier.regenAt = game.now + BARRIER_REGEN_DELAY;
-      game.canvas.dataset.barrierState = "regen";
-    };
-
-    const destroyBarrier = () => {
-      const barrier = game._barrier;
-      if (!barrier || !barrier.active) return;
-      barrier.active = false;
-      barrier.hp = 0;
-      barrier.disabledUntil = game.now + BARRIER_BREAK_COOLDOWN;
-      // 파괴 이펙트: 방사형 파편 + 섬광
-      for (let index = 0; index < 18; index++) {
-        const angle = index / 18 * Math.PI * 2;
-        const dir = vector(Math.cos(angle), Math.sin(angle));
-        createWorldStrip(
-          game.player.pos.clone().add(dir.clone().multiplyScalar(BARRIER_INNER)),
-          game.player.pos.clone().add(dir.multiplyScalar(BARRIER_INNER + 46)),
-          index % 2 ? 4 : 8,
-          index % 3 ? 0x9bd0ff : 0xffffff,
-          { duration: 0.34, opacity: 0.95 },
-        );
-      }
-      createPulseDisc(game.player, BARRIER_OUTER, 0x9bd0ff, 0.4, 0.16);
-      game.cameraShake = Math.max(game.cameraShake, 7);
-      game.canvas.dataset.barrierState = "broken";
-      game.canvas.dataset.barrierHp = "0";
-      game.showToast("BARRIER DESTROYED");
-    };
-
-    const updateBarrier = (dt) => {
+    const updateBarrier = () => {
       const barrier = game._barrier;
       if (!barrier) return;
-      if (!barrier.active && barrier.hp < BARRIER_MAX_HP && game.now >= barrier.regenAt) {
-        barrier.hp = Math.min(BARRIER_MAX_HP, barrier.hp + BARRIER_REGEN_RATE * dt);
-        game.canvas.dataset.barrierHp = String(Math.ceil(barrier.hp));
+      if (barrier.active && game.now >= barrier.activeUntil) {
+        barrier.active = false;
+        game.canvas.dataset.barrierState = "ready";
       }
       syncBarrierVisual();
     };
@@ -3387,7 +3348,7 @@
     // 방벽이 세그먼트(from→to)를 흡수하는지 판정 (구간 샘플링)
     const barrierBlocks = (from, to) => {
       const barrier = game._barrier;
-      if (!barrier || !barrier.active || barrier.hp <= 0) return false;
+      if (!barrier || !barrier.active || game.now >= barrier.activeUntil) return false;
       const samples = 10;
       for (let index = 0; index <= samples; index++) {
         const t = index / samples;
@@ -3401,15 +3362,6 @@
       }
       return false;
     };
-
-    const absorbBarrierDamage = (amount) => {
-      const barrier = game._barrier;
-      if (!barrier) return;
-      barrier.hp = Math.max(0, barrier.hp - amount);
-      game.canvas.dataset.barrierHp = String(Math.ceil(barrier.hp));
-      if (barrier.hp <= 0) destroyBarrier();
-    };
-    game.destroyBarrier = destroyBarrier; // 멀티플레이 서버 확정 파괴 처리용
 
     const syncFlashHalos = () => {
       // 시야(부채꼴/원형) 안에 들어온 적에 한해서만 링을 표시한다. (자기 자신 제외)
@@ -3458,7 +3410,7 @@
         ctx.player.ring.material.color.setHex(Math.sin(ctx.now * 11) > 0 ? 0xff3b45 : 0xffffff);
       }
       syncFlashHalos();
-      updateBarrier(dt);
+      updateBarrier();
       updateScytheThrow(dt);
       updateSummons(dt);
       updateSpray();
@@ -3490,11 +3442,9 @@
       if (["reaper", "ninja"].includes(selected.id)) {
         ui.ammo.textContent = "∞";
         ui.reserve.textContent = "∞";
-      } else if (["frog", "bulwark"].includes(selected.id)) {
+      } else {
+        // (현재 장탄수) / (최대 장탄수) — 예비 탄약은 표시하지 않는다.
         ui.ammo.textContent = `${ctx.player.ammo}`;
-        ui.reserve.textContent = "∞";
-      } else if (ctx.player.reserve >= 9999) {
-        // 무제한 장탄 무기는 9999 대신 현재 최대 장탄수를 표시한다. (예: 30/30)
         ui.reserve.textContent = `${ctx.player.weapon.magSize}`;
       }
       const badgeCount = (value) => (Number.isFinite(value) ? String(value || 0) : "∞");
@@ -3520,7 +3470,10 @@
       } else if (selected.id === "sentinel") {
         secondaryCooldown = cooldownRemaining("heavy-laser");
         abilityCooldown = cooldownRemaining("reveal");
-      } else if (selected.id === "bulwark") abilityCooldown = cooldownRemaining("flash-shield");
+      } else if (selected.id === "bulwark") {
+        secondaryCooldown = cooldownRemaining("barrier");
+        abilityCooldown = cooldownRemaining("flash-shield");
+      }
       else if (selected.id === "soldier") {
         secondaryCooldown = cooldownRemaining("flash");
         abilityCooldown = cooldownRemaining("enhance");
@@ -3597,7 +3550,7 @@
       ctx.canvas.dataset.abilityCooldown = abilityCooldown.toFixed(2);
       ctx.canvas.dataset.specialCooldownSeconds = String(SPECIAL_COOLDOWN);
       ctx.canvas.dataset.shieldViewDegrees = String(SHIELD_VIEW_DEGREES);
-      ctx.canvas.dataset.barrierHp = String(Math.ceil(ctx._barrier?.hp ?? 0));
+      ctx.canvas.dataset.barrierState = ctx._barrier?.active ? "active" : "ready";
       ctx.canvas.dataset.weaponRpm = String(ctx.player.weapon.rpm);
       ctx.canvas.dataset.weaponReloadSeconds = String(ctx.player.weapon.reload);
       ctx.canvas.dataset.demolitionistCharging = "disabled";
@@ -3609,13 +3562,10 @@
         if (isOperator("bulwark") && ctx._barrier) {
           const barrier = ctx._barrier;
           barrierEl.classList.remove("hidden");
-          if (ctx.now < barrier.disabledUntil) {
-            barrierEl.textContent = `BARRIER ${Math.ceil(barrier.disabledUntil - ctx.now)}s`;
-            barrierEl.className = "barrier-status broken";
-          } else {
-            barrierEl.textContent = `BARRIER ${Math.ceil(barrier.hp)}/${BARRIER_MAX_HP}`;
-            barrierEl.className = barrier.hp < BARRIER_MAX_HP * 0.35 ? "barrier-status damaged" : "barrier-status";
-          }
+          barrierEl.textContent = barrier.active
+            ? `BARRIER ${Math.max(0, barrier.activeUntil - ctx.now).toFixed(1)}s`
+            : "BARRIER READY";
+          barrierEl.className = barrier.active ? "barrier-status" : "barrier-status ready";
         } else {
           barrierEl.classList.add("hidden");
         }

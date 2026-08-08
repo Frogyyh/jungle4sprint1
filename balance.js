@@ -35,11 +35,11 @@
 
     /* 투척물/유탄 */
     gadgets: {
-      flash: { radius: 200, duration: 1, fuse: 1.0, count: 2 },     // 군인 보유 수
+      flash: { radius: 200, duration: 2, fuse: 1.0, count: 2 },     // 군인 보유 수
       smoke: { radius: 150, duration: 10, fuse: 1.0, count: 2 },    // 스나이퍼 보유 수
-      frag: { radius: 100, damage: 100, fuse: 1.5, count: 2 },
+      frag: { radius: 200, damage: 100, fuse: 1.5, count: 2 },
       launcher: { radius: 67, damage: 60, speed: 620 },
-      throwSpeed: 640, // 수류탄·연막탄·섬광탄 투척 초기 속도 (투척 거리 기준)
+      throwSpeed: 1300, // 수류탄·연막탄·섬광탄 투척 초기 속도 (멀리 던지기 위해 상향)
     },
 
     /* 병과별 스킬/무기 */
@@ -55,7 +55,7 @@
       bulwark: {
         hp: 300,
         weapon: { id: "shield_pistol", name: "SHIELD LMG", damage: 5, pellets: 1, rpm: 900, spreadDeg: 12, magSize: 100, reserve: 9999, reload: 2.5, range: 620, projectileSpeed: 1050, color: 0x7ea8ff },
-        barrier: { maxHp: 250, regenDelay: 1, regenRate: 50, breakCooldown: 10, halfAngleDeg: 60, inner: 55, outer: 100 },
+        barrier: { duration: 3, cooldown: 10, halfAngleDeg: 60, inner: 55, outer: 100 },
         flashShield: { range: 260, halfAngleDeg: 120, duration: 1 },
       },
       sentinel: {
@@ -94,7 +94,7 @@
           costHp: 25, minHp: 25, hp: 1, expire: 20,
           spawnDistance: 44, scale: 0.62, scytheScale: 0.9,
           navCell: 48, navRadius: 14, hitRadius: 16,
-          attackDamage: 20, attackRange: 38, attackInterval: 1, moveSpeed: 164,
+          attackDamage: 20, attackRange: 38, attackInterval: 1, moveSpeed: 300,
         },
       },
       hunter: {

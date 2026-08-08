@@ -111,7 +111,7 @@ guest.send(JSON.stringify({ type: "state", x: 400, y: 25, dir: Math.PI, fx: { b:
 await host.next((message) => message.type === "state" && message.player.id === joined.playerId && message.fx?.b);
 host.send(JSON.stringify({ type: "hit", targetId: joined.playerId, damage: 20 }));
 const barrier = await guest.next((message) => message.type === "barrier" && message.playerId === joined.playerId);
-if (barrier.hp !== 230) throw new Error(`barrier synchronization mismatch: ${barrier.hp}`);
+if (barrier.active !== true) throw new Error("barrier synchronization mismatch");
 
 await new Promise((resolve) => setTimeout(resolve, 50));
 guest.send(JSON.stringify({ type: "state", x: 400, y: 25, dir: Math.PI }));

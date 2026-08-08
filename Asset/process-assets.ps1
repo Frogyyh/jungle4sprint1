@@ -147,6 +147,7 @@ $weapons = @(
   @{ Source = 'Wep_Rifle.png'; Output = 'rifle.png' },
   @{ Source = 'Wep_PistolR.png'; Output = 'pistol-r.png' },
   @{ Source = 'Wep_PistolL.png'; Output = 'pistol-l.png' },
+  @{ Source = 'Wep_Lmg.png'; Output = 'lmg.png' },
   @{ Source = 'Wep_Shield.png'; Output = 'shield.png' },
   @{ Source = 'Wep_Railgun.png'; Output = 'railgun.png' },
   @{ Source = 'Char_DoubleBarrel.png'; Output = 'double-barrel.png' },

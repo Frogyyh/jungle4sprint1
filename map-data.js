@@ -5,14 +5,28 @@
      의 단일 원본. game.html 에서 operators.js 직후에 로드되어
      window.BREACHLINE_MAP_DATA 로 노출된다. */
   const WORLD = Object.freeze({ width: 2600, height: 1800 });
-  const SPAWNS = Object.freeze({ player: [-1080, 0], enemy: [1080, 0] });
+  // 맵 밖 스폰 구역 — 깊이(x 폭), y 길이 = 짧은 변(1800)의 절반, 스폰 지점 x
+  const SPAWN_DEPTH = 300;
+  const SPAWN_LENGTH = 900;
+  const SPAWN_X = 1450;
+  const SPAWNS = Object.freeze({ player: [-SPAWN_X, 0], enemy: [SPAWN_X, 0] });
   const rect = (id, type, x, y, w, h) => Object.freeze({ id, type, x, y, w, h });
   const point = (id, type, x, y, r = 28) => Object.freeze({ id, type, x, y, r });
   const bounds = () => [
-    rect("boundary-west", "boundary", -1280, 0, 40, 1760),
-    rect("boundary-east", "boundary", 1280, 0, 40, 1760),
+    // 좌/우 경계 벽: 중앙에 스폰 진입로(틈 y=-450~+450)를 남기고 상/하로 분리
+    rect("boundary-west-top", "boundary", -1280, 665, 40, 430),
+    rect("boundary-west-bottom", "boundary", -1280, -665, 40, 430),
+    rect("boundary-east-top", "boundary", 1280, 665, 40, 430),
+    rect("boundary-east-bottom", "boundary", 1280, -665, 40, 430),
     rect("boundary-north", "boundary", 0, 880, 2600, 40),
     rect("boundary-south", "boundary", 0, -880, 2600, 40),
+    // 맵 밖 스폰 구역 (좌=블루/A, 우=레드/B) — y 길이 = 짧은 변의 절반
+    rect("spawn-blue-outer", "boundary", -1600, 0, 40, SPAWN_LENGTH),
+    rect("spawn-blue-top", "boundary", -1450, 450, SPAWN_DEPTH, 40),
+    rect("spawn-blue-bottom", "boundary", -1450, -450, SPAWN_DEPTH, 40),
+    rect("spawn-red-outer", "boundary", 1600, 0, 40, SPAWN_LENGTH),
+    rect("spawn-red-top", "boundary", 1450, 450, SPAWN_DEPTH, 40),
+    rect("spawn-red-bottom", "boundary", 1450, -450, SPAWN_DEPTH, 40),
   ];
   const oldCover = (points) => points.map(([id, x, y, w, h]) => rect(id, "cover", x, y, w, h));
   const legacy = [
@@ -138,6 +152,8 @@
   const data = Object.freeze({
     world: WORLD,
     spawns: SPAWNS,
+    spawnDepth: SPAWN_DEPTH,
+    spawnLength: SPAWN_LENGTH,
     maps: Object.freeze(maps.map((map) => Object.freeze({ ...map, objects: Object.freeze(map.objects) }))),
     find(id) { return this.maps.find((map) => map.id === id) || this.maps[0]; },
   });

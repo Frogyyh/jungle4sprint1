@@ -105,8 +105,8 @@ test("서버 확정 방벽 체력은 로컬에 그대로 반영된다", async ()
   game.selectedOperatorId = "bulwark";
   game.startRound();
 
-  sendJson(socket, { type: "barrier", playerId: "p1", hp: 150 });
-  assert.equal(game._barrier.hp, 150);
+  sendJson(socket, { type: "barrier", playerId: "p1", active: true });
+  assert.equal(game._barrier.active, true);
 });
 
 test("원격 피격은 로컬에 반영하지 않고 서버로 보고한다", async () => {
@@ -124,6 +124,31 @@ test("원격 피격은 로컬에 반영하지 않고 서버로 보고한다", as
   const hit = socket.sent.map((raw) => JSON.parse(raw))
     .find((message) => message.type === "hit");
   assert.deepEqual(hit, { type: "hit", playerId: "p1", targetId: "p2", damage: 30 });
+});
+
+test("원격 소환수는 흰 원이 아닌 캐릭터 복제(회색 해골)로 렌더된다", async () => {
+  const { context, game, socket } = bootMultiplayer();
+  sendJson(socket, welcomeRoom());
+  await context.__multiplayer.ready;
+  game.selectedOperatorId = "soldier";
+  game.startRound();
+
+  sendJson(socket, {
+    type: "state",
+    player: { id: "p2", x: 520, y: 0, dir: Math.PI, hp: 200, alive: true },
+    fx: { u: [[1, 480, 30, 1]] },
+  });
+
+  const entry = context.__multiplayer.remoteFx.get("p2");
+  const summons = entry?.summons || [];
+  assert.equal(summons.length, 1, "원격 소환수가 생성되어야 한다");
+  const summon = summons[0];
+  assert.equal(summon.userData.summonId, 1);
+  assert.equal(summon.scale.x, context.BREACHLINE_BALANCE.operators.reaper.summon.scale,
+    "해골은 소환수 스케일(마커 0.95 아님)로 축소되어 캐릭터 복제임을 드러낸다");
+  assert.ok(game.fxGroup.children.includes(summon), "해골은 fxGroup 에 추가된다");
+  assert.equal(summon.position.x, 480);
+  assert.equal(summon.position.y, 30);
 });
 
 test("팀 카운트는 서버 로스터 기준으로 센다", async () => {

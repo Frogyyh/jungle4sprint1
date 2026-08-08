@@ -22,6 +22,9 @@
     const FLASH_RADIUS = B.gadgets.flash.radius;
     const FLASH_DURATION = B.gadgets.flash.duration;
     const SMOKE_DURATION = B.gadgets.smoke.duration;
+    // 코어 연막 메시 기본 폭(= 기본 반지름). 스모크 메시는 radius/150 로 스케일되므로
+    // 퍼프는 이 기본 단위(150) 안에 배치해야 반경 밖으로 새지 않는다.
+    const SMOKE_BASE = 150;
     const AI_FAIR_RANGE = B.ai.fairRange;
     const DEFAULT_VIEW_SCALE = B.vision.camera.defaultScale;
     const SNIPER_VIEW_SCALE = B.vision.camera.sniperScale;
@@ -71,12 +74,19 @@
     const requestedMapId = new URLSearchParams(location.search).get("map") || "crossroads";
     const selectedMap = mapData.find(requestedMapId);
     const blockingTypes = new Set(["boundary", "wall", "cover", "crate", "water"]);
+    // 장애물 외곽선 — 바닥 그래픽과 통과 불가능한 장애물을 구분한다.
+    const OUTLINE_TYPES = new Set(["boundary", "wall", "cover", "crate"]);
+    const OUTLINE_COLOR = 0xf0f6ff;
+    const OUTLINE_MARGIN = 6;
+    const OUTLINE_OPACITY = 0.55;
 
     const disposeMapMesh = (mesh) => {
       if (!mesh) return;
       game.worldGroup.remove(mesh);
-      mesh.geometry?.dispose();
-      mesh.material?.dispose();
+      mesh.traverse?.((part) => {
+        part.geometry?.dispose?.();
+        part.material?.dispose?.();
+      });
     };
 
     const makeMapMesh = (object) => {
@@ -93,8 +103,20 @@
         opacity: object.type === "bush" ? 0.72 : object.type === "water" ? 0.78 : 1,
       });
       const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(object.x, object.y, object.type === "water" ? 1 : 8);
+      const z = object.type === "water" ? 1 : 8;
+      mesh.position.set(object.x, object.y, z);
       mesh.userData.breachlineMapObject = object.type;
+      // 벽·엄폐·크레이트·경계 등 시야를 가리는 장애물은 바닥 그래픽과 구분되도록
+      // 약간 큰 배경판(외곽선)을 깔아 무엇이 통과 불가능한지 한눈에 보이게 한다.
+      if (OUTLINE_TYPES.has(object.type)) {
+        const outline = new THREE.Mesh(
+          new THREE.PlaneGeometry(width + OUTLINE_MARGIN * 2, height + OUTLINE_MARGIN * 2),
+          new THREE.MeshBasicMaterial({ color: OUTLINE_COLOR, transparent: true, opacity: OUTLINE_OPACITY })
+        );
+        outline.position.set(0, 0, -1); // 부모(장애물) 아래로 한 칸 내려 테두리로 보이게 한다
+        outline.userData.breachlineMapOutline = true;
+        mesh.add(outline);
+      }
       return mesh;
     };
 
@@ -702,7 +724,8 @@
 
       const grenade = ctx.grenades[ctx.grenades.length - 1];
       grenade.fuse = B.gadgets[type]?.fuse ?? 1.5;
-      grenade.vel.multiplyScalar(power);
+      // 코어 기본 투척 속도(500)는 너무 짧다 — balance 의 throwSpeed 로 재설정해 멀리 던진다.
+      grenade.vel.normalize().multiplyScalar(B.gadgets.throwSpeed * power);
       grenade.throwPower = power;
       grenade.initialFuse = grenade.fuse;
       grenade.predictedLanding = predictedLanding;
@@ -801,17 +824,20 @@
           // 3계층 드리프트: 코어는 좁게, 외곽 림은 넓게 흔들린다.
           const layerScale = data.breachlineSmokeLayer === 2 ? 1.6 : data.breachlineSmokeLayer === 1 ? 1.15 : 0.8;
           const phase = ctx.now * 0.58 + (data.breachlineSmokeSeed || puffIndex * 2.17);
-          const drift = smoke.radius * 0.02 * layerScale;
+          const drift = SMOKE_BASE * 0.02 * layerScale;
           const breathe = 1 + Math.sin(ctx.now * 0.9 + puffIndex * 1.43) * 0.055;
           let nextX = data.breachlineBaseX + Math.cos(phase) * drift;
           let nextY = data.breachlineBaseY + Math.sin(phase * 0.87) * drift;
-          // 퍼프는 반드시 연막 범위 내부에서만 표시된다 (외부 침범 금지)
-          const puffRadius = data.breachlineBaseScale * (smoke.mesh.scale.x || 1) * 1.06;
-          const maxRadius = Math.max(1, smoke.radius - puffRadius);
+          // 퍼프는 반드시 연막 범위 내부에서만 표시된다 (외부 침범 금지).
+          // 퍼프는 기본 메시(폭 150)의 절반(75) × 스케일만큼 반경을 차지하므로,
+          // 중심을 (기본 반경 - 반폭) 이내로 제한해야 가장자리가 범위를 벗어나지 않는다.
+          const puffRadius = 75 * data.breachlineBaseScale;
+          const maxRadius = Math.max(0, SMOKE_BASE - puffRadius);
           const radial = Math.hypot(nextX, nextY);
-          if (radial > maxRadius) {
-            nextX *= maxRadius / radial;
-            nextY *= maxRadius / radial;
+          if (radial > maxRadius && radial > 0) {
+            const scale = maxRadius / radial;
+            nextX *= scale;
+            nextY *= scale;
           }
           puff.position.x = nextX;
           puff.position.y = nextY;
@@ -827,7 +853,7 @@
       const [actor, direction] = args;
       const shotsBefore = actor.shots;
       original(actor, direction);
-      if (actor.shots > shotsBefore && actor.ammo === 0 && actor.reserve > 0) {
+      if (actor.shots > shotsBefore && actor.ammo === 0) {
         ctx.reload(actor);
       }
       if (actor === ctx.player && actor.shots > shotsBefore) {

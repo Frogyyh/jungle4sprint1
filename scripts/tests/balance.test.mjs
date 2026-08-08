@@ -48,8 +48,10 @@ test("balance.js 격발 지연/투척 속도는 단일 원본이다", () => {
   const balance = context.BREACHLINE_BALANCE;
 
   assert.equal(balance.gadgets.frag.fuse, 1.5, "수류탄 격발 지연 1.5초");
+  assert.equal(balance.gadgets.frag.radius, 200, "수류탄 폭발 반경 2배 확장");
   assert.equal(balance.gadgets.flash.fuse, 1.0, "섬광탄 격발 지연 1.0초");
+  assert.equal(balance.gadgets.flash.duration, 2, "섬광탄 지속 2초");
   assert.equal(balance.gadgets.smoke.fuse, 1.0, "연막탄 격발 지연 1.0초");
-  assert.equal(balance.gadgets.throwSpeed, 640, "투척 초기 속도");
+  assert.ok(balance.gadgets.throwSpeed >= 1000, "투척 초기 속도는 충분히 빨라야 한다");
   assert.equal(balance.gadgets.launcher.fuse, undefined, "유탄은 격발 지연 변경 제외");
 });

@@ -78,7 +78,7 @@
     hostBots.length = 0;
     const own = findMember(playerId);
     const iAmHost = room?.hostId === playerId;
-    game.player.pos.set(own?.x ?? -520, own?.y ?? 0);
+    game.player.pos.set(own?.x ?? -1450, own?.y ?? 0);
     game.player.dir = own?.dir ?? 0;
     game.player.maxHp = own?.maxHp ?? maxHpFor(own?.characterId);
     game.player.hp = own?.hp ?? game.player.maxHp;
@@ -96,7 +96,6 @@
       const actor = new Bot(`net-${member.id.slice(0, 6)}`, position, weapon);
       actor.operatorId = member.characterId || "soldier";
       actor.ammo = weapon.magSize;
-      actor.reserve = weapon.reserve;
       /* 봇은 방장 화면에서만 AI 로 움직인다(_bot). 나머지 참가자에게는
          다른 사람과 똑같이 서버가 보내주는 위치를 따라가는 액터(_remote)다. */
       const myBot = Boolean(member.bot) && iAmHost;
@@ -415,7 +414,7 @@
         fx.d = [kind, Number(game.player.dir.toFixed(2)), Number(progress.toFixed(2))];
       }
     }
-    if (game._barrier?.active) fx.b = [Math.max(0, Math.round(game._barrier.hp))];
+    if (game._barrier?.active) fx.b = [1];
     if (game._railChargeStartedAt !== null && !game._railNeedsRelease) {
       fx.r = [Math.min(1, Math.max(0, Number((game.now - game._railChargeStartedAt).toFixed(2))))];
     }
@@ -481,6 +480,46 @@
     while (markers.length > points.length) disposeMarker(markers.pop());
     points.forEach((point, index) => markers[index].position.set(point[xIndex], point[yIndex], 24));
     entry[key] = markers;
+  };
+
+  /* 원격 소환수 — 상대 리퍼 캐릭터 메시를 복제해 회색 해골 형태로 그린다.
+     로컬 summonUndead 와 동일한 방식(캐릭터 복제 + 회색 + 축소)으로,
+     위치만 전송되는 소환수도 흰 원이 아닌 모델로 보이게 한다. */
+  const makeRemoteSkeleton = (actor) => {
+    const mesh = actor.mesh.clone(true);
+    mesh.scale.setScalar(B.operators.reaper.summon.scale);
+    mesh.traverse((part) => {
+      if (part.material) {
+        part.material = part.material.clone();
+        part.material.color?.setHex(0xc7d0d5);
+      }
+    });
+    game.fxGroup.add(mesh);
+    return mesh;
+  };
+
+  const disposeSkeleton = (mesh) => {
+    mesh?.parent?.remove(mesh);
+    mesh?.traverse?.((part) => {
+      part.geometry?.dispose?.();
+      part.material?.dispose?.();
+    });
+  };
+
+  const syncRemoteSummons = (actor, entry, rows = []) => {
+    const summons = entry.summons || [];
+    while (summons.length < rows.length) summons.push(makeRemoteSkeleton(actor));
+    while (summons.length > rows.length) disposeSkeleton(summons.pop());
+    rows.forEach((row, index) => {
+      const [id, x, y, hp] = row;
+      summons[index].position.set(x, y, 10);
+      summons[index].userData.summonId = id;
+      summons[index].userData.summonHp = hp;
+      summons[index].userData.summonOwnerId = playerId;
+      summons[index].visible = true;
+      summons[index].rotation.z += 0.02; // 살아있는 듯 살짝 회전
+    });
+    entry.summons = summons;
   };
 
   /* 덫 위험 구역 링(반경 radius)을 선명한 선으로 그린다. 덫은 정적이라 위치가
@@ -615,7 +654,7 @@
     const half = B.operators.bulwark.barrier.halfAngleDeg * Math.PI / 360;
     const inner = B.operators.bulwark.barrier.inner;
     const outer = B.operators.bulwark.barrier.outer;
-    const hpFraction = Math.max(0, Math.min(1, barrier[0] / B.operators.bulwark.barrier.maxHp));
+    const hpFraction = 1;
     strips.forEach((strip) => strip.material.color.setHex(hpFraction > 0.35 ? 0x9bd0ff : 0xff8a7a));
     for (let index = 0; index < 12; index++) {
       const a = actor.dir - half + index / 12 * half * 2;
@@ -877,9 +916,10 @@
         ...(entry.revealRings || []), ...(entry.trapRings || []),
         ...(entry.gunKataRing || []), ...(entry.gunKataSpin || []),
       ]) disposeStrip(strip);
-      for (const marker of [entry.dash, entry.reveal, entry.landing, entry.gunKataPulse, entry.net, ...(entry.summons || []), ...(entry.traps || []), ...(entry.trapZones || [])]) {
+      for (const marker of [entry.dash, entry.reveal, entry.landing, entry.gunKataPulse, entry.net, ...(entry.traps || []), ...(entry.trapZones || [])]) {
         disposeMarker(marker);
       }
+      for (const summon of entry.summons || []) disposeSkeleton(summon);
       const actor = actors.get(id);
       if (actor?._remoteGunKataActive) {
         actor._remoteGunKataActive = false;
@@ -1116,14 +1156,8 @@
     syncPointMarkers(entry, "traps", fx?.T || [], trapCfg.color, 0.6, 0, 1);
     syncTrapRings(entry, fx?.T || []);
 
-    // 소환수 — 크고 밝은 마커 + 펄스
-    syncPointMarkers(entry, "summons", fx?.u || [], 0xd5dde2, 0.95, 1, 2);
-    (entry.summons || []).forEach((marker, index) => {
-      marker.userData.summonId = fx.u[index][0];
-      marker.userData.summonHp = fx.u[index][3];
-      marker.userData.summonOwnerId = playerId;
-      marker.scale.setScalar(0.95 * (1 + Math.sin(performance.now() / 280 + index * 1.7) * 0.08));
-    });
+    // 소환수 — 상대 리퍼 캐릭터 복제로 회색 해골 모델을 그린다.
+    syncRemoteSummons(actor, entry, fx?.u || []);
 
     applyFlashShield(actor, entry, fx?.f);
 
@@ -1176,16 +1210,9 @@
       applyRemoteFx(message.player.id, message.fx);
     }
     if (message.type === "barrier" && message.playerId === playerId && game?._barrier) {
-      // 서버가 확정한 방벽 체력/파괴를 그대로 반영한다.
-      if (message.hp <= 0 && (game._barrier.active || game._barrier.hp > 0)) {
-        game.destroyBarrier?.();
-        game._barrier.hp = 0;
-        game.renderUi();
-      } else if (message.hp > 0) {
-        game._barrier.hp = message.hp;
-        game._barrier.disabledUntil = 0;
-        game.renderUi();
-      }
+      game._barrier.active = message.active !== false;
+      game._barrier.activeUntil = game.now + B.operators.bulwark.barrier.duration;
+      game.renderUi();
     }
     if (message.type === "hit") {
       const actor = actors.get(message.targetId);

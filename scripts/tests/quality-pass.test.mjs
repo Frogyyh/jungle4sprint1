@@ -146,3 +146,44 @@ test("연막 내부 시점엔 퍼프 드리프트를 생략해도 무해하다",
   assert.doesNotThrow(() => game.updateSmokes());
   assert.equal(puffs[0].visible, true, "연막 밖이면 퍼프가 보인다");
 });
+
+test("연막 퍼프는 드리프트 후에도 기본 반경(150) 밖으로 나가지 않는다", () => {
+  const { game } = bootQualityPass();
+  const puff = {
+    userData: { breachlineSmokePuff: true, breachlineSmokeLayer: 2, breachlineSmokeSeed: 0 },
+    position: { x: 200, y: 0 }, // 기본 반경(150) 밖의 초기 위치
+    scale: { x: 0.26, setScalar() {} },
+    material: { opacity: 0.4 },
+    visible: true,
+  };
+  const smoke = {
+    id: 1,
+    pos: game.player.pos.clone().set(0, 0, 0),
+    radius: 225,
+    endAt: game.now + 5,
+    mesh: {
+      userData: { breachlineSmokeCluster: true },
+      rotation: { z: 0 },
+      scale: { x: 1.5 },
+      children: [puff],
+    },
+    owner: game.player,
+  };
+  game.smokes.push(smoke);
+  game.player.pos.set(500, 0, 0); // 연막 밖 → 드리프트 실행
+
+  game.updateSmokes();
+  const maxCenter = 150 - 75 * puff.userData.breachlineBaseScale;
+  assert.ok(Math.hypot(puff.position.x, puff.position.y) <= maxCenter + 1e-6,
+    `퍼프 중심이 기본 반경(150) 이내로 제한되어야 한다 (현재 ${Math.hypot(puff.position.x, puff.position.y).toFixed(1)})`);
+});
+
+test("장애물(벽/엄폐)은 바닥과 구분되는 외곽선을 가진다", () => {
+  const { game } = bootQualityPass();
+
+  const outlinedWalls = game.walls.filter((wall) =>
+    wall.mesh.children.some((child) => child.userData?.breachlineMapOutline)
+  );
+  assert.ok(outlinedWalls.length > 0, "차단 오브젝트(경계/벽/엄폐)는 외곽선 자식을 가져야 한다");
+  assert.ok(outlinedWalls.every((wall) => wall.type !== "water"), "물은 외곽선 대상이 아니다");
+});
