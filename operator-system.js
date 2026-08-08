@@ -2,11 +2,19 @@
   "use strict";
 
   /* ============================================================
-   * frog.js 병합 (2026-08-08) — 원본 frog.js 의 installFrog 를
-   * operator-system.js 안으로 이동해 단일 진입점으로 통합했다.
+   * frog.js 병합 — 개구리 병과 전체 로직(혀 스윙, 거품, 물방울
+   * 이펙트, 부착 시야)을 operator-system.js 안의 installFrog 로
+   * 단일 진입점으로 통합했다. 별도 frog.js 파일은 제거했다.
    * 패치 체인 순서를 보존하기 위해 installOperatorSystem() 에서
    * game 준비 확인 직후 installFrog() 를 먼저 호출한다.
    * ============================================================ */
+
+  // 공용 헬퍼 — installFrog / installOperatorSystem 가 함께 쓴다.
+  // vec·vector 는 game.player.pos.constructor 를 지연 평가하므로
+  // 게임 초기화 후 호출 시점에만 참조한다(정의 시점 참조 없음).
+  const vec = (x = 0, y = 0) => new (window.__breachline).player.pos.constructor(x, y);
+  const vector = vec;
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
   const installFrog = () => {
     const game = window.__breachline;
@@ -20,8 +28,6 @@
     const FROG = B.operators.frog.weapon;
     // Remote frogs must use the Bubble Sprayer, regardless of the local loadout.
     game.frogWeapon = FROG;
-    const vec = (x = 0, y = 0) => new game.player.pos.constructor(x, y);
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const ATTACHED_VISION_RADIUS = Math.round(B.vision.maxRange * B.operators.frog.attachedVisionRatio); // 시야 최대 거리의 33% → 304
     const TONGUE_PULL_SPEED = B.operators.frog.tongue.pullSpeed;
     const MIN_TONGUE_LENGTH = B.operators.frog.tongue.minLength;
@@ -29,6 +35,9 @@
     const FROG_MOMENTUM_MAX = B.operators.frog.momentum.max;
     const FROG_MOMENTUM_DAMPING = B.operators.frog.momentum.damping;
     const AUTO_BUBBLE_INTERVAL = B.operators.frog.autoBubbleInterval;
+    const WATER_SLOW_DURATION = B.operators.frog.waterSlow.duration;
+    const WATER_SLOW_SCALE = B.operators.frog.waterSlow.moveScale;
+    const waterDrips = [];
     const AUTO_BUBBLE = {
       id: "frog-auto-bubble",
       name: "SWING BUBBLE",
@@ -44,6 +53,65 @@
       color: B.operators.frog.bubble.color,
     };
     const isFrog = () => game.activeOperatorId === "frog" || game.player.weapon?.id === "frog";
+
+    const disposeWaterDrip = (index) => {
+      const drip = waterDrips[index];
+      if (!drip) return;
+      drip.mesh.parent?.remove(drip.mesh);
+      drip.mesh.geometry?.dispose?.();
+      drip.mesh.material?.dispose?.();
+      waterDrips.splice(index, 1);
+    };
+
+    const showWaterDrips = (target) => {
+      if (!target?.pos) return;
+      if (game.now - (target._lastWaterDripAt ?? -Infinity) < 0.08) return;
+      target._lastWaterDripAt = game.now;
+      for (let index = 0; index < 10; index++) {
+        const mesh = game.player.body.clone(false);
+        mesh.geometry = game.player.body.geometry.clone();
+        mesh.material = game.player.body.material.clone();
+        mesh.material.color.setHex(index % 3 === 0 ? 0xd9fbff : index % 2 ? 0x73dfff : 0x38bdf8);
+        mesh.material.transparent = true;
+        mesh.material.depthWrite = false;
+        mesh.material.opacity = 0.88;
+        mesh.scale.set(0.09 + index % 3 * 0.025, 0.22 + index % 2 * 0.08, 1);
+        mesh.userData.remoteFxOwner = target._remote ? target : null;
+        const angle = index / 10 * Math.PI * 2 + Math.sin(index * 2.7) * 0.3;
+        const radius = 20 + index % 4 * 7;
+        const start = target.pos.clone().add(vec(Math.cos(angle) * radius, Math.sin(angle) * radius + 22));
+        mesh.position.set(start.x, start.y, 24);
+        mesh.rotation.z = angle - Math.PI / 2;
+        game.fxGroup.add(mesh);
+        waterDrips.push({
+          mesh,
+          start,
+          startedAt: game.now,
+          endAt: game.now + 0.55 + index % 3 * 0.08,
+          fall: 42 + index % 4 * 9,
+          sway: Math.sin(index * 1.9) * 10,
+        });
+      }
+    };
+    game.showWaterDrips = showWaterDrips;
+
+    const updateWaterDrips = () => {
+      for (let index = waterDrips.length - 1; index >= 0; index--) {
+        const drip = waterDrips[index];
+        if (game.now >= drip.endAt) {
+          disposeWaterDrip(index);
+          continue;
+        }
+        const progress = (game.now - drip.startedAt) / (drip.endAt - drip.startedAt);
+        drip.mesh.position.set(
+          drip.start.x + Math.sin(progress * Math.PI) * drip.sway,
+          drip.start.y - drip.fall * progress,
+          24 - progress * 8,
+        );
+        drip.mesh.material.opacity = 0.88 * (1 - progress);
+        drip.mesh.scale.x *= 0.995;
+      }
+    };
     let tongue = null;
     let canLaunchTongue = true;
     let spaceHeld = false;
@@ -366,6 +434,7 @@
       nextAutoBubbleAt = 0;
       autoBubbleCount = 0;
       frogMomentum.set(0, 0);
+      while (waterDrips.length) disposeWaterDrip(waterDrips.length - 1);
       originalStartRound();
       if (wantsFrog) {
         this.selectedWeapon = "frog";
@@ -399,10 +468,7 @@
       projectile.mesh.material.opacity = 0.48 + Math.random() * 0.22;
       projectile.mesh.material.depthWrite = false;
       projectile.mesh.rotation.z = 0;
-      const isAutoBubble = weapon?.id === "frog-auto-bubble";
-      projectile.mesh.scale.setScalar(isAutoBubble
-        ? 0.58 + Math.random() * 0.24
-        : 0.24 + Math.random() * 0.22);
+      projectile.mesh.scale.setScalar(0.24 + Math.random() * 0.22);
       projectile.velocity.multiplyScalar(0.88 + Math.random() * 0.24);
       projectile.remaining *= 0.92 + Math.random() * 0.16;
       projectile.isSoapBubble = true;
@@ -445,6 +511,7 @@
         frogMomentum.multiplyScalar(Math.pow(damping, dt));
         if (frogMomentum.lengthSq() < 4) frogMomentum.set(0, 0);
       }
+      updateWaterDrips();
     };
 
     const originalIsVisible = game.isVisible.bind(game);
@@ -504,13 +571,14 @@
       const hpBefore = target.hp;
       originalDamageActor(source, target, amount);
       if (source === this.player && isFrog() && target.hp < hpBefore) {
-        target.slowUntil = this.now + 1;
+        target.slowUntil = this.now + WATER_SLOW_DURATION;
+        showWaterDrips(target);
       }
     };
 
     const originalMoveBot = game.moveBot.bind(game);
     game.moveBot = function moveSlowedBot(bot, dt, direction) {
-      const slowFactor = bot.slowUntil > this.now ? 0.7 : 1;
+      const slowFactor = bot.slowUntil > this.now ? WATER_SLOW_SCALE : 1;
       originalMoveBot(bot, dt * slowFactor, direction);
     };
 
@@ -596,10 +664,8 @@
     // 밸런스 모듈 — 모든 인게임 수치는 balance.js 단일 원본을 참조한다.
     const B = window.BREACHLINE_BALANCE;
 
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
     const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
     const colorHex = (value) => Number.parseInt(value.slice(1), 16);
-    const vector = (x = 0, y = 0) => new game.player.pos.constructor(x, y);
     const directionTo = (from, to) => to.clone().sub(from).normalize();
     const operator = () => window.findBreachlineOperator(game.activeOperatorId || game.selectedOperatorId);
     const isOperator = (id) => game.activeOperatorId === id;
