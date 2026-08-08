@@ -4,49 +4,166 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07111c" />
-    <title>Visual Shooting Code — 로비 입장</title>
+    <title>Visual Shooting Code</title>
     <link rel="icon" href="./Asset/logo.png" />
-    <link rel="stylesheet" href="./ui/ui.css" />
+    <style>
+      :root { --cyan: #4fe4dc; --ink: #eaf5f7; --muted: #9fb4c0; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1100px 760px at 70% 42%, #16344e 0%, #0b1d30 46%, #060e18 100%),
+          #060e18;
+        overflow: hidden;
+      }
+      /* 은은한 격자 오버레이 */
+      body::before {
+        content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .5;
+        background-image:
+          linear-gradient(rgba(120,180,210,.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(120,180,210,.05) 1px, transparent 1px);
+        background-size: 46px 46px;
+        -webkit-mask-image: radial-gradient(1200px 800px at 60% 45%, #000 30%, transparent 85%);
+        mask-image: radial-gradient(1200px 800px at 60% 45%, #000 30%, transparent 85%);
+      }
+
+      .hero {
+        position: relative; z-index: 1;
+        display: grid; grid-template-columns: 1.05fr 1fr; align-items: center;
+        gap: 24px; height: 100vh; width: min(1440px, 100%); margin: 0 auto;
+        padding: 40px clamp(28px, 6vw, 92px);
+      }
+
+      /* ---- 왼쪽: 타이틀 + 닉네임 ---- */
+      .hero-eyebrow {
+        margin: 0 0 20px; color: var(--cyan); font-weight: 800;
+        letter-spacing: .42em; font-size: 15px;
+      }
+      .hero-eyebrow::after {
+        content: ""; display: block; width: 190px; height: 2px; margin-top: 14px;
+        background: var(--cyan); box-shadow: 0 0 14px rgba(79,228,220,.5);
+      }
+      .hero-title {
+        margin: 0; font-weight: 900; line-height: .92;
+        font-size: clamp(46px, 8.4vw, 116px); letter-spacing: -.01em;
+        text-shadow: 0 6px 40px rgba(0,0,0,.5);
+      }
+      .hero-title span { display: block; }
+      .hero-title .accent {
+        color: var(--cyan); width: max-content;
+        border-bottom: 5px solid var(--cyan);
+        padding-bottom: 6px; text-shadow: 0 0 34px rgba(79,228,220,.45);
+      }
+      .hero-sub {
+        margin: 26px 0 34px; color: #c6d7de; font-weight: 600;
+        letter-spacing: .34em; font-size: clamp(13px, 1.5vw, 17px); text-transform: uppercase;
+      }
+
+      .hero-form { display: flex; gap: 12px; max-width: 480px; flex-wrap: wrap; }
+      .hero-form input {
+        flex: 1 1 220px; min-width: 0; padding: 15px 18px;
+        color: var(--ink); font-size: 15px; letter-spacing: .02em;
+        background: rgba(8,20,32,.72); border: 1px solid rgba(120,180,210,.28);
+        outline: none; transition: border-color .15s ease, box-shadow .15s ease;
+      }
+      .hero-form input::placeholder { color: #6d8391; }
+      .hero-form input:focus {
+        border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(79,228,220,.16);
+      }
+      .hero-form button {
+        flex: 0 0 auto; border: 0; padding: 15px 30px; cursor: pointer;
+        color: #04141a; background: var(--cyan); font-weight: 900; font-size: 14px;
+        letter-spacing: .1em; box-shadow: 0 10px 26px rgba(79,228,220,.28);
+        transition: transform .12s ease, background .15s ease;
+      }
+      .hero-form button:hover { background: #86fff6; transform: translateY(-1px); }
+      .form-error { min-height: 18px; margin: 12px 0 0; color: #ff8f8a; font-size: 13px; }
+      .direct-play { margin: 18px 0 0; color: var(--muted); font-size: 12px; }
+      .direct-play a { color: var(--cyan); text-decoration: none; }
+      .direct-play a:hover { text-decoration: underline; }
+
+      /* ---- 오른쪽: 캐릭터 아트 + 조준 리클 ---- */
+      .hero-art { position: relative; height: 100%; }
+      .hero-art img { position: absolute; filter: drop-shadow(0 14px 26px rgba(0,0,0,.55)); }
+      .art-reaper  { width: 20%; top: 38%; left: 62%; transform: translate(-50%,-50%); z-index: 3; }
+      .art-gun     { width: 17%; top: 44%; left: 30%; transform: translate(-50%,-50%) rotate(6deg); z-index: 2; }
+      .art-frog    { width: 15%; top: 70%; left: 12%; transform: translate(-50%,-50%) rotate(-8deg); z-index: 2; opacity: .96; }
+
+      /* 조준 대상 글로우 + 리클 */
+      .reticle {
+        position: absolute; top: 38%; left: 62%; width: 260px; height: 260px;
+        transform: translate(-50%,-50%); z-index: 1;
+      }
+      .reticle .glow {
+        position: absolute; inset: -40px; border-radius: 50%;
+        background: radial-gradient(circle, rgba(79,228,220,.22), rgba(79,228,220,0) 68%);
+      }
+      .reticle .ring {
+        position: absolute; inset: 26%; border-radius: 50%;
+        border: 2px solid rgba(79,228,220,.85); box-shadow: 0 0 18px rgba(79,228,220,.35);
+      }
+      .reticle .ring.outer { inset: 8%; border-color: rgba(79,228,220,.45); }
+      .reticle .bracket {
+        position: absolute; width: 34px; height: 34px; border: 3px solid #ffd23a;
+      }
+      .reticle .bracket.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+      .reticle .bracket.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+      .reticle .bracket.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+      .reticle .bracket.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+      /* 조준선(레이저) */
+      .tracer {
+        position: absolute; height: 2px; transform-origin: left center; z-index: 0;
+        background: linear-gradient(90deg, rgba(79,228,220,0), rgba(79,228,220,.55));
+      }
+      .tracer.t1 { top: 30%; left: -6%; width: 74%; transform: rotate(9deg); }
+      .tracer.t2 { top: 78%; left: -10%; width: 82%; transform: rotate(-16deg); }
+
+      @media (max-width: 880px) {
+        body { overflow: auto; }
+        .hero { grid-template-columns: 1fr; height: auto; min-height: 100vh; gap: 8px; }
+        .hero-art { height: 300px; order: -1; }
+        .hero-title { font-size: clamp(40px, 13vw, 76px); }
+      }
+      @media (max-width: 520px) {
+        .hero-form button { flex: 1 1 100%; }
+      }
+    </style>
   </head>
-  <body class="landing-page">
-    <main class="landing-shell">
-      <section class="landing-copy" aria-labelledby="game-title">
-        <p class="eyebrow">Visual Shooting Code</p>
-        <h1 id="game-title" class="tactical-title">
-          <img class="title-logo" src="./Asset/logo.png" alt="" />
-          <span class="wordmark"><span class="wordmark-cut">vs<b>code</b></span></span>
+  <body>
+    <main class="hero">
+      <section class="hero-left" aria-labelledby="game-title">
+        <p class="hero-eyebrow">PROTOTYPE</p>
+        <h1 id="game-title" class="hero-title">
+          <span>VISUAL</span>
+          <span>SHOOTING</span>
+          <span class="accent">CODE</span>
         </h1>
-        <p class="title-slate" aria-hidden="true">
-          <span>TACTICAL ARENA</span><i></i><span>2 VS 2</span><i></i><span>10 OPERATORS</span>
-        </p>
-        <p class="landing-description">
-          팀을 만들고 캐릭터를 선택한 뒤 전장에 합류하세요.
-          빠르게 움직이고, 협력하고, 끝까지 살아남으세요.
-        </p>
-        <div class="feature-strip" aria-label="게임 특징">
-          <span>실시간 전투</span>
-          <span>팀 로비</span>
-          <span>캐릭터 선택</span>
-        </div>
+        <p class="hero-sub">TOP-DOWN ARENA SHOOTER</p>
+
+        <form id="nickname-form" class="hero-form" novalidate>
+          <input id="nickname-input" name="nickname" type="text" maxlength="12"
+            autocomplete="nickname" placeholder="닉네임 입력 (2~12자)" aria-label="닉네임" />
+          <button type="submit">시작하기</button>
+        </form>
+        <p id="nickname-error" class="form-error" aria-live="polite"></p>
+        <p class="direct-play">로비 없이 바로 연습하려면 <a href="./game.html">싱글 게임 열기</a></p>
       </section>
 
-      <section class="auth-card" aria-labelledby="nickname-title">
-        <div class="card-accent"></div>
-        <p class="eyebrow">IDENTITY REQUIRED</p>
-        <h2 id="nickname-title">작전명 입력</h2>
-        <p>로비에서 사용할 닉네임을 입력하세요.</p>
-
-        <form id="nickname-form" novalidate>
-          <label for="nickname-input">닉네임</label>
-          <input id="nickname-input" name="nickname" type="text" maxlength="12"
-            autocomplete="nickname" placeholder="2~12자" />
-          <p id="nickname-error" class="form-error" aria-live="polite"></p>
-          <button type="submit" class="primary-button">로비 입장</button>
-        </form>
-
-        <p class="direct-play">
-          로비 없이 확인하려면 <a href="./game.html">게임 화면 바로 열기</a>
-        </p>
+      <section class="hero-art" aria-hidden="true">
+        <div class="reticle">
+          <div class="glow"></div>
+          <div class="ring outer"></div>
+          <div class="ring"></div>
+          <div class="bracket tl"></div><div class="bracket tr"></div>
+          <div class="bracket bl"></div><div class="bracket br"></div>
+        </div>
+        <div class="tracer t1"></div>
+        <div class="tracer t2"></div>
+        <img class="art-frog" src="./Asset/processed/characters/frog.png" alt="" />
+        <img class="art-gun" src="./Asset/processed/characters/gunslinger.png" alt="" />
+        <img class="art-reaper" src="./Asset/processed/characters/reaper.png" alt="" />
       </section>
     </main>
 
