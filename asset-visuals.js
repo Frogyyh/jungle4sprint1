@@ -474,7 +474,6 @@
 
     game.applyWeaponVisual(game.player, game.player.weapon.id);
     for (const bot of game.bots) game.applyWeaponVisual(bot, bot.weapon.id);
-    game.assetTextureCache = textureCache;
     game.canvas.dataset.assetCharacters = [...characterIds].join(",");
     game.canvas.dataset.assetWeaponProfiles = Object.keys(weaponProfiles).join(",");
     game.canvas.dataset.meleeVisualRecoil = "disabled";

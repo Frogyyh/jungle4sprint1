@@ -569,10 +569,8 @@
         game.styleGrenadeMesh?.({ type: ["flash", "smoke", "frag", "launcher"][type], mesh });
         let telegraph = null;
         if (type !== 3) {
-          telegraph = document.createElement("div");
-          telegraph.className = "throw-telegraph";
-          telegraph.innerHTML = '<div class="telegraph-sweep"></div><div class="telegraph-core"><span class="telegraph-icon">!</span></div><span class="telegraph-time">0.0s</span>';
-          document.querySelector("#throw-telegraphs")?.appendChild(telegraph);
+          telegraph = game.makeGrenadeTelegraph?.();
+          if (telegraph) document.querySelector("#throw-telegraphs")?.appendChild(telegraph);
         }
         grenade = {
           id, type, x, y, fuse, initialFuse, mesh, telegraph,
@@ -658,19 +656,21 @@
       strips.push(stripMesh(0x9bd0ff, index < 12 ? 0.14 : index < 22 ? 0.85 : 0.9));
     }
     const half = B.operators.bulwark.barrier.halfAngleDeg * Math.PI / 360;
+    const inner = B.operators.bulwark.barrier.inner;
+    const outer = B.operators.bulwark.barrier.outer;
     const hpFraction = Math.max(0, Math.min(1, barrier[0] / B.operators.bulwark.barrier.maxHp));
     strips.forEach((strip) => strip.material.color.setHex(hpFraction > 0.35 ? 0x9bd0ff : 0xff8a7a));
     for (let index = 0; index < 12; index++) {
       const a = actor.dir - half + index / 12 * half * 2;
       const b = actor.dir - half + (index + 1) / 12 * half * 2;
       placeStrip(strips[index],
-        { x: actor.pos.x + Math.cos(a) * 82, y: actor.pos.y + Math.sin(a) * 82 },
-        { x: actor.pos.x + Math.cos(b) * 100, y: actor.pos.y + Math.sin(b) * 100 }, 9);
+        { x: actor.pos.x + Math.cos(a) * inner, y: actor.pos.y + Math.sin(a) * inner },
+        { x: actor.pos.x + Math.cos(b) * outer, y: actor.pos.y + Math.sin(b) * outer }, 9);
     }
     for (let index = 0; index < 10; index++) {
       const a = actor.dir - half + index / 10 * half * 2;
       const b = actor.dir - half + (index + 1) / 10 * half * 2;
-      const radius = 100 * (0.88 + hpFraction * 0.12);
+      const radius = outer * (0.88 + hpFraction * 0.12);
       placeStrip(strips[12 + index],
         { x: actor.pos.x + Math.cos(a) * radius, y: actor.pos.y + Math.sin(a) * radius },
         { x: actor.pos.x + Math.cos(b) * radius, y: actor.pos.y + Math.sin(b) * radius }, 3);
@@ -678,8 +678,8 @@
     [-half, half].forEach((offset, index) => {
       const angle = actor.dir + offset;
       placeStrip(strips[22 + index],
-        { x: actor.pos.x + Math.cos(angle) * 55, y: actor.pos.y + Math.sin(angle) * 55 },
-        { x: actor.pos.x + Math.cos(angle) * 100, y: actor.pos.y + Math.sin(angle) * 100 }, 3.4);
+        { x: actor.pos.x + Math.cos(angle) * inner, y: actor.pos.y + Math.sin(angle) * inner },
+        { x: actor.pos.x + Math.cos(angle) * outer, y: actor.pos.y + Math.sin(angle) * outer }, 3.4);
     });
     entry.barrier = strips;
   };
@@ -938,10 +938,7 @@
     }
   }
 
-/* 낫 투척 — 회전 블레이드 + 몸체 마커 */
-
-/* 대쉬 — 몸체 마커 + 뒤쪽 잔상 */
-const syncRemoteDash = (actor, entry, fx) => {
+  const syncRemoteDash = (actor, entry, fx) => {
     if (fx?.d && actor.alive) {
       const colors = [0xffd166, 0x9ef0ff, 0x9bb5ff];
       if (!entry.dash || entry.dashKind !== fx.d[0]) {

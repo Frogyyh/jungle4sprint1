@@ -61,7 +61,6 @@
     game._incomingUntil = 0;
     game.canvas.dataset.flashRadius = String(FLASH_RADIUS);
     game.canvas.dataset.smokeDuration = String(SMOKE_DURATION);
-    game.canvas.dataset.enemyGadgetMix = "50:50";
     game.canvas.dataset.flashDurations = FLASH_DURATION.toFixed(2);
     game.canvas.dataset.cameraZoomMode = "fixed";
     game.canvas.dataset.identificationBounds = "camera-frustum";
@@ -398,6 +397,12 @@
     game.positionGrenadeTelegraph = positionTelegraph;
 
     game._grenadeTelegraphs = new Map();
+    game.makeGrenadeTelegraph = () => {
+      const element = document.createElement("div");
+      element.className = "throw-telegraph";
+      element.innerHTML = '<div class="telegraph-sweep"></div><div class="telegraph-core"><span class="telegraph-icon">✦</span></div><span class="telegraph-time">0.0s</span>';
+      return element;
+    };
     const syncGrenadeTelegraphs = () => {
       const activeIds = new Set();
       for (const grenade of game.grenades) {
@@ -407,9 +412,7 @@
         activeIds.add(key);
         let element = game._grenadeTelegraphs.get(key);
         if (!element) {
-          element = document.createElement("div");
-          element.className = "throw-telegraph";
-          element.innerHTML = '<div class="telegraph-sweep"></div><div class="telegraph-core"><span class="telegraph-icon">✦</span></div><span class="telegraph-time">0.0s</span>';
+          element = game.makeGrenadeTelegraph();
           ui.telegraphs.appendChild(element);
           game._grenadeTelegraphs.set(key, element);
         }

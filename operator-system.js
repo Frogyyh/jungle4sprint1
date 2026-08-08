@@ -8,14 +8,6 @@
    * game.html 의 quality-pass.js 직후에 로드된다.
    * ============================================================ */
 
-  /* ============================================================
-   * frog.js 병합 — 개구리 병과 전체 로직(혀 스윙, 거품, 물방울
-   * 이펙트, 부착 시야)을 operator-system.js 안의 installFrog 로
-   * 단일 진입점으로 통합했다. 별도 frog.js 파일은 제거했다.
-   * 패치 체인 순서를 보존하기 위해 installOperatorSystem() 에서
-   * game 준비 확인 직후 installFrog() 를 먼저 호출한다.
-   * ============================================================ */
-
   // 공용 헬퍼 — installFrog / installOperatorSystem 가 함께 쓴다.
   // vec·vector 는 game.player.pos.constructor 를 지연 평가하므로
   // 게임 초기화 후 호출 시점에만 참조한다(정의 시점 참조 없음).
@@ -618,8 +610,6 @@
       this.canvas.dataset.autoBubbles = `${autoBubbleCount}`;
     };
 
-    game.getTongueCooldown = () => 0;
-
     window.addEventListener("keydown", (event) => {
       if (event.code !== "Space" || event.repeat || game.phase !== "playing" || !isFrog()) return;
       event.preventDefault();
@@ -668,7 +658,6 @@
     // 로드 순서(frog → operator)와 동일한 체인이 유지된다.
     installFrog();
 
-    // 밸런스 모듈 — 모든 인게임 수치는 balance.js 단일 원본을 참조한다.
     const B = window.BREACHLINE_BALANCE;
 
     const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
@@ -810,7 +799,6 @@
     game._summons = [];
     game._traps = []; // 스나이퍼 덫 (아군·적군 모두에게 보임)
     game._trapPlacing = false; // 스나이퍼 덫 설치 모드
-    game._trapPreview = null; // 설치 범위 미리보기 메시
     game._net = null; // 스나이퍼 투망 (직접 관리 오브젝트)
     game._barrage = null; // 폭탄마 직선 폭격
     game._summonSerial = 0;
@@ -883,7 +871,6 @@
       game.player.fragGrenades = selected.id === "demolitionist" ? Infinity : 0;
       game.player.flashGrenades = selected.id === "soldier" ? Infinity : 0;
       game.player.smokeGrenades = 0;
-      game.viewScale = selected.id === "sniper" ? 1.5 : 1;
       game.updateCameraFrustum();
       applyAppearance(selected);
       updateGadgetVisibility();
@@ -2588,15 +2575,6 @@
         }
       }
       if (game._traps) game._traps.length = 0;
-      const preview = game._trapPreview;
-      if (preview) {
-        for (const mesh of [preview.area, preview.marker]) {
-          mesh.parent?.remove(mesh);
-          mesh.geometry?.dispose?.();
-          mesh.material?.dispose?.();
-        }
-        game._trapPreview = null;
-      }
     }
 
     function clearNet() {
@@ -3588,7 +3566,7 @@
         secondaryCooldown = cooldownRemaining("frag");
         abilityCooldown = cooldownRemaining("barrage");
       }
-      else if (selected.id === "frog") abilityCooldown = this.getTongueCooldown?.() || 0;
+      else if (selected.id === "frog") abilityCooldown = 0;
       const cooldown = Math.max(secondaryCooldown, abilityCooldown);
       const secondaryStatus = secondaryCooldown > 0 ? ` ${secondaryCooldown.toFixed(1)}s` : "";
       const abilityStatus = abilityCooldown > 0 ? ` ${abilityCooldown.toFixed(1)}s` : "";
@@ -3655,15 +3633,8 @@
       this.canvas.dataset.barrierHp = String(Math.ceil(this._barrier?.hp ?? 0));
       this.canvas.dataset.weaponRpm = String(this.player.weapon.rpm);
       this.canvas.dataset.weaponReloadSeconds = String(this.player.weapon.reload);
-      this.canvas.dataset.ninjaSmokeRadius = "225";
-      this.canvas.dataset.daggerSpreadRadians = "0.16";
       this.canvas.dataset.demolitionistCharging = "disabled";
       this.canvas.dataset.hunterInvulnerable = String(Boolean(this._operatorDash?.invulnerable));
-      this.canvas.dataset.soldierGadgets = isOperator("soldier") ? "flash:2" : "none";
-      this.canvas.dataset.sniperGadgets = isOperator("sniper") ? "smoke:2" : "none";
-      this.canvas.dataset.demolitionistGadgets = isOperator("demolitionist") ? "frag:2" : "none";
-      this.canvas.dataset.healthRegenDelay = "5";
-      this.canvas.dataset.healthRegenRate = "5";
 
       // 아이언 방벽 상태 표시
       const barrierEl = document.getElementById("barrier-status");
