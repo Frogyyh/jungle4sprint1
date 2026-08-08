@@ -6,7 +6,8 @@ const output = resolve(root, "public");
 const files = [
   "index.html", "landing.js", "styles.css", "game.html", "game.js",
   "operators.js", "balance.js", "operator-system.js", "quality-pass.js",
-  "asset-visuals.js", "lobby-bridge.js", "multiplayer-client.js", "map-data.js", "ui",
+  "asset-visuals.js", "lobby-bridge.js", "multiplayer-client.js", "map-data.js",
+  "shared-utils.js", "ui",
 ];
 const assetFiles = ["logo.png", "processed"];
 

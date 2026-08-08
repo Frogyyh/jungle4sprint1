@@ -22,6 +22,7 @@
 
   const operator = window.findBreachlineOperator(characterId);
   const $ = (selector) => document.querySelector(selector);
+  const { wrap } = window.BREACHLINE_UTIL;
 
   const LOBBY_URL = "./ui/rooms.html";
   const roomUrl = () => (roomId ? `./ui/room.html?id=${encodeURIComponent(roomId)}` : LOBBY_URL);
@@ -40,19 +41,19 @@
     if (!ui.screen || !ui.scoreboard) return;
 
     // 오프라인 전용: 코어는 킬·발사·명중만 센다. 깎인 체력을 가해자에게 쌓아 딜량으로 쓴다.
-    const originalDamageActor = game.damageActor.bind(game);
-    game.damageActor = function countDamageDealt(source, target, amount) {
+    wrap(game, "damageActor", (original, ctx, args) => {
+      const [source, target, amount] = args;
       const hpBefore = target.hp;
-      originalDamageActor(source, target, amount);
+      original(source, target, amount);
       const dealt = hpBefore - target.hp;
       if (dealt > 0 && source) source._damageDealt = (source._damageDealt || 0) + dealt;
-    };
+    });
 
-    const originalResetRound = game.resetRound.bind(game);
-    game.resetRound = function resetWithDamageTally(showLoadout = true) {
-      originalResetRound(showLoadout);
-      for (const actor of [this.player, ...this.bots]) actor._damageDealt = 0;
-    };
+    wrap(game, "resetRound", (original, ctx, args) => {
+      const [showLoadout = true] = args;
+      original(showLoadout);
+      for (const actor of [ctx.player, ...ctx.bots]) actor._damageDealt = 0;
+    });
 
     /* 화면에 그릴 한 줄. 온라인·오프라인 어느 쪽이든 이 모양으로 맞춰서 넘긴다.
        { name, team, kills, damage, accuracy, alive, mine, offline } */
@@ -229,41 +230,41 @@
     };
 
     // 관전 중에는 카메라·시야를 아군 기준으로 계산한다.
-    const withWatched = (original) =>
-      function runAsSpectator(...args) {
+    const withWatched = (handler) =>
+      function runAsSpectator(original, ctx, args) {
         if (!watching?.alive) return original(...args);
-        const realPlayer = this.player;
-        this.player = watching;
+        const realPlayer = ctx.player;
+        ctx.player = watching;
         try {
-          return original(...args);
+          return handler(original, ctx, args);
         } finally {
-          this.player = realPlayer;
+          ctx.player = realPlayer;
         }
       };
 
-    game.updateCamera = withWatched(game.updateCamera.bind(game));
-    game.updateVisibility = withWatched(game.updateVisibility.bind(game));
-    const originalSpectatorVisibility = game.isVisible.bind(game);
-    game.isVisible = function spectatorVisibility(observer, target, coneDegrees, distance) {
+    wrap(game, "updateCamera", withWatched((original, ctx, args) => original(...args)));
+    wrap(game, "updateVisibility", withWatched((original, ctx, args) => original(...args)));
+    wrap(game, "isVisible", (original, ctx, args) => {
+      const [observer, target] = args;
       if (watching?.alive && target?.alive) return true;
-      return originalSpectatorVisibility(observer, target, coneDegrees, distance);
-    };
+      return original(observer, target, args[2], args[3]);
+    });
 
-    const originalStep = game.step.bind(game);
-    game.step = function stepWithSpectator(dt) {
-      originalStep(dt);
+    wrap(game, "step", (original, ctx, args) => {
+      const [dt] = args;
+      original(dt);
       if (!multiplayer) return;
       const mp = window.__multiplayer;
       const actor = teammateToWatch();
       if (actor && actor !== watching) {
         const member = mp?.room?.members.find((m) => mp.actors?.get(m.id) === actor);
         enterSpectate(actor, member);
-        this.showToast(`${member?.name || "아군"} 관전 중 — ESC 로 나가기`);
+        ctx.showToast(`${member?.name || "아군"} 관전 중 — ESC 로 나가기`);
       } else if (!actor && watching) {
         // 아군까지 모두 쓰러졌다 — 서버가 곧 종료를 알린다.
         leaveSpectate();
       }
-    };
+    });
 
     /* ---- 관전 중 요약 화면 (Esc) ---- */
 
@@ -322,22 +323,21 @@
     if (!roomId) ui.room?.classList.add("hidden");
     if (multiplayer) $("#restart-button")?.classList.add("hidden");
 
-    const originalEndRound = game.endRound.bind(game);
-    game.endRound = function endRoundWithScoreboard(playerWon, copy) {
-      if (this.phase === "result") return;
-      originalEndRound(playerWon, copy);
+    wrap(game, "endRound", (original, ctx, args) => {
+      const [playerWon, copy] = args;
+      if (ctx.phase === "result") return;
+      original(playerWon, copy);
       // 온라인에서는 서버의 종료 신호가 오기 전까지 코어의 판정이 막혀 있다.
       // 실제로 끝났을 때만 전적표를 그린다.
-      if (this.phase !== "result") return;
+      if (ctx.phase !== "result") return;
       leaveSpectate(); // 라운드가 끝나면 관전도 끝 — Esc 가로채기도 함께 풀린다
       renderScoreboard(Boolean(playerWon));
-    };
+    });
 
-    const originalStartRound = game.startRound.bind(game);
-    game.startRound = function startRoundWithCleanScoreboard() {
+    wrap(game, "startRound", (original) => {
       ui.spectateBar?.classList.add("hidden");
-      originalStartRound();
-    };
+      original();
+    });
   }
 
   /* ---------------- 로비에서 넘어온 진입 ---------------- */

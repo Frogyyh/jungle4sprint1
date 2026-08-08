@@ -90,8 +90,8 @@ module.exports = [
     rules: { ...js.configs.recommended.rules, ...sharedRules },
   },
   {
-    // Cloudflare Worker와 빌드 스크립트 ES 모듈
-    files: ["server/*.mjs", "scripts/*.mjs"],
+    // Cloudflare Worker와 빌드 스크립트/테스트 ES 모듈
+    files: ["server/*.mjs", "scripts/**/*.mjs"],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: "module",

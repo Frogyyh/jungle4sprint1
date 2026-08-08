@@ -15,6 +15,8 @@
     if (game.__assetVisualsInstalled) return;
     game.__assetVisualsInstalled = true;
 
+    const { wrap } = window.BREACHLINE_UTIL;
+
     const CHARACTER_ROOT = "./Asset/processed/characters";
     const WEAPON_ROOT = "./Asset/processed/weapons";
     const textureCache = new Map();
@@ -221,11 +223,11 @@
       }
     };
 
-    const originalApplyWeaponVisual = game.applyWeaponVisual.bind(game);
-    game.applyWeaponVisual = function applyAssetWeaponVisual(actor, requestedId = actor.weapon?.id || "rifle") {
+    wrap(game, "applyWeaponVisual", (original, ctx, args) => {
+      const [actor, requestedId = actor.weapon?.id || "rifle"] = args;
       if (!actor?.mesh) return;
       clearWeaponRoot(actor);
-      originalApplyWeaponVisual(actor, requestedId);
+      original(actor, requestedId);
       applyCharacterVisual(actor);
 
       const id = actor._visualWeaponId || requestedId;
@@ -269,7 +271,7 @@
       root.userData.baseScaleX = 1;
       root.userData.baseScaleY = 1;
       actor._visualWeaponId = id;
-    };
+    });
 
     const applyGrenadeAsset = (grenade) => {
       if (!grenade?.mesh || grenade.mesh.userData?.breachlineAssetChecked) return;
@@ -285,10 +287,10 @@
       grenade.mesh.material.depthWrite = false;
     };
 
-    const originalFire = game.fire.bind(game);
-    game.fire = function fireWithSeparatedVisualRecoil(actor, direction) {
+    wrap(game, "fire", (original, ctx, args) => {
+      const [actor, direction] = args;
       const shotsBefore = actor.shots;
-      originalFire(actor, direction);
+      original(actor, direction);
       if (actor.shots <= shotsBefore) return;
       const weaponId = actor.weapon?.id || actor._visualWeaponId;
       const profile = recoilProfiles[weaponId];
@@ -298,17 +300,17 @@
           actor._weaponVisualRoot.position.set(0, 0, 0);
           actor._weaponVisualRoot.rotation.z = 0;
         }
-        if (actor === this.player) this.canvas.dataset.visualRecoilClass = "melee-none";
+        if (actor === ctx.player) ctx.canvas.dataset.visualRecoilClass = "melee-none";
         return;
       }
       actor._assetRecoil = {
-        startAt: this.now,
-        endAt: this.now + profile.duration,
+        startAt: ctx.now,
+        endAt: ctx.now + profile.duration,
         distance: profile.distance,
         roll: (actor.shots % 2 ? -1 : 1) * profile.roll,
       };
-      if (actor === this.player) this.canvas.dataset.visualRecoilClass = `firearm-${weaponId}`;
-    };
+      if (actor === ctx.player) ctx.canvas.dataset.visualRecoilClass = `firearm-${weaponId}`;
+    });
 
     const updateCharacterTransform = (actor, rotateWithActor) => {
       const parentAngle = actor.mesh.rotation.z;
@@ -423,54 +425,52 @@
       }
     };
 
-    const originalDamageActor = game.damageActor.bind(game);
-    game.damageActor = function damageWithSpriteFeedback(source, target, amount) {
+    wrap(game, "damageActor", (original, ctx, args) => {
+      const [source, target, amount] = args;
       const hpBefore = target.hp;
-      originalDamageActor(source, target, amount);
+      original(source, target, amount);
       if (target.hp >= hpBefore || !target._characterSprite?.material?.color) return;
-      target._assetPulseUntil = this.now + 0.09;
+      target._assetPulseUntil = ctx.now + 0.09;
       target._characterSprite.material.color.setHex(0xff6f72);
-    };
+    });
 
-    const originalStep = game.step.bind(game);
-    game.step = function stepAssetVisuals(dt) {
-      originalStep(dt);
-      updateActorVisual(this.player);
-      for (const bot of this.bots) updateActorVisual(bot);
+    wrap(game, "step", (original, ctx, args) => {
+      const [dt] = args;
+      original(dt);
+      updateActorVisual(ctx.player);
+      for (const bot of ctx.bots) updateActorVisual(bot);
       updateGrenadeVisuals(dt);
-      for (const actor of [this.player, ...this.bots]) {
-        if (!actor._characterSprite?.material?.color || this.now < (actor._assetPulseUntil || 0)) continue;
+      for (const actor of [ctx.player, ...ctx.bots]) {
+        if (!actor._characterSprite?.material?.color || ctx.now < (actor._assetPulseUntil || 0)) continue;
         actor._characterSprite.material.color.setHex(0xffffff);
       }
-      this.canvas.dataset.assetWeaponRoot = String(Boolean(this.player._weaponVisualRoot));
-      this.canvas.dataset.weaponMirrored = String(Boolean(
-        this.player._weaponVisualRoot && (
-          this.player._weaponVisualRoot.scale.x < 0 || this.player._weaponVisualRoot.scale.y < 0
+      ctx.canvas.dataset.assetWeaponRoot = String(Boolean(ctx.player._weaponVisualRoot));
+      ctx.canvas.dataset.weaponMirrored = String(Boolean(
+        ctx.player._weaponVisualRoot && (
+          ctx.player._weaponVisualRoot.scale.x < 0 || ctx.player._weaponVisualRoot.scale.y < 0
         )
       ));
-    };
+    });
 
-    const originalResetRound = game.resetRound.bind(game);
-    game.resetRound = function resetAssetVisuals(...args) {
-      originalResetRound(...args);
-      for (const actor of [this.player, ...this.bots]) {
+    wrap(game, "resetRound", (original, ctx, args) => {
+      original(...args);
+      for (const actor of [ctx.player, ...ctx.bots]) {
         actor._assetPulseUntil = 0;
         actor._gunKataAssetPose = false;
         if (actor._characterSprite?.material?.color) actor._characterSprite.material.color.setHex(0xffffff);
       }
-      this.applyWeaponVisual(this.player, this.player.weapon.id);
-      for (const bot of this.bots) this.applyWeaponVisual(bot, bot.weapon.id);
-      this.canvas.dataset.gunKataAssetPose = "idle";
-    };
+      ctx.applyWeaponVisual(ctx.player, ctx.player.weapon.id);
+      for (const bot of ctx.bots) ctx.applyWeaponVisual(bot, bot.weapon.id);
+      ctx.canvas.dataset.gunKataAssetPose = "idle";
+    });
 
-    const originalRender = game.render.bind(game);
-    game.render = function renderWithAssetMetrics() {
-      originalRender();
-      this.canvas.dataset.assetTextureCache = String(textureCache.size);
-      this.canvas.dataset.rendererGeometries = String(this.renderer.info.memory.geometries);
-      this.canvas.dataset.rendererTextures = String(this.renderer.info.memory.textures);
-      this.canvas.dataset.rendererDrawCalls = String(this.renderer.info.render.calls);
-    };
+    wrap(game, "render", (original, ctx) => {
+      original();
+      ctx.canvas.dataset.assetTextureCache = String(textureCache.size);
+      ctx.canvas.dataset.rendererGeometries = String(ctx.renderer.info.memory.geometries);
+      ctx.canvas.dataset.rendererTextures = String(ctx.renderer.info.memory.textures);
+      ctx.canvas.dataset.rendererDrawCalls = String(ctx.renderer.info.render.calls);
+    });
 
     game.applyWeaponVisual(game.player, game.player.weapon.id);
     for (const bot of game.bots) game.applyWeaponVisual(bot, bot.weapon.id);

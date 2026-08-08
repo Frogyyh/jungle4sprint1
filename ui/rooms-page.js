@@ -92,7 +92,7 @@ listEl.addEventListener("click", (event) => {
 });
 
 document.getElementById("refresh").addEventListener("click", () => refresh(true));
-document.getElementById("change-nickname").addEventListener("click", () => { location.href = "index.html"; });
+document.getElementById("change-nickname").addEventListener("click", () => { location.href = "../index.html"; });
 
 const modal = document.getElementById("create-modal");
 const form = document.getElementById("create-form");

@@ -9,6 +9,14 @@
 
   // 밸런스 모듈 — 원격 효과/판정 수치도 balance.js 단일 원본을 참조한다.
   const B = window.BREACHLINE_BALANCE;
+  const {
+    easeSwing,
+    segmentCircleHit,
+    cameraHalfExtents,
+    TRAP_RING_SEGMENTS,
+    wrap,
+    createFxPool,
+  } = window.BREACHLINE_UTIL;
 
   const roomId = params.get("room");
   const stored = JSON.parse(sessionStorage.getItem("breachline.multiplayerSession") || "null");
@@ -145,19 +153,17 @@
   function installGameHooks() {
     if (!game || game._multiplayerHooksInstalled) return;
     game._multiplayerHooksInstalled = true;
-    const originalRendererRender = game.renderer.render.bind(game.renderer);
-    game.renderer.render = function renderWithRemoteFxVisibility(scene, camera) {
+    wrap(game.renderer, "render", (original, ctx, args) => {
       syncRemoteFxVisibility();
-      return originalRendererRender(scene, camera);
-    };
-    const originalStart = game.startRound.bind(game);
-    game.startRound = function startMultiplayerRound() {
-      originalStart();
+      return original(...args);
+    });
+    wrap(game, "startRound", (original, ctx) => {
+      original();
       clearRemoteFx();
       createRemoteActors();
       active = true;
-      this.showToast(`ONLINE // TEAM ${findMember(playerId)?.team || "?"}`);
-    };
+      ctx.showToast(`ONLINE // TEAM ${findMember(playerId)?.team || "?"}`);
+    });
 
     /* 피격은 서버가 확정한다. 내가 조종하는 쪽(나 · 방장이면 봇)이 상대를 맞히면
        서버에 보고하고, 체력은 서버가 보내주는 hit 메시지로 맞춘다. */
@@ -168,8 +174,8 @@
     const networkIdOf = (actor) =>
       actor === game.player ? playerId : actor?._networkPlayerId || null;
 
-    const originalDamage = game.damageActor.bind(game);
-    game.damageActor = function networkDamage(source, target, amount) {
+    wrap(game, "damageActor", (original, ctx, args) => {
+      const [source, target, amount] = args;
       // 남의 총알이 준 피해는 서버가 정한다 — 화면에서 미리 깎지 않는다.
       if (source?._remote) return;
       const attackerId = controlledId(source);
@@ -177,27 +183,27 @@
       if (attackerId && targetId && attackerId !== targetId && source.team !== target.team) {
         const before = target.hp;
         // 내 화면에 있는 봇은 즉시 반영해도 서버가 곧 정정한다. 남(_remote)과 나는 서버에 맡긴다.
-        if (target._bot) originalDamage(source, target, amount);
+        if (target._bot) original(source, target, amount);
         const dealt = target._bot ? before - target.hp : amount;
         if (dealt > 0) {
           send({ type: "hit", playerId: attackerId, targetId, damage: dealt });
         }
         return;
       }
-      if (target === this.player && (source?._remote || source?._bot)) return;
-      originalDamage(source, target, amount);
-    };
+      if (target === ctx.player && (source?._remote || source?._bot)) return;
+      original(source, target, amount);
+    });
 
     /* 총알은 각 화면이 스스로 만든다. 내가(또는 내 봇이) 쏜 사실을 서버로 보내
        다른 화면에서도 같은 총알이 생기게 한다. 이게 없으면 상대 총알이 보이지 않는다. */
-    const originalSpawn = game.spawnProjectile.bind(game);
-    game.spawnProjectile = function networkSpawn(source, position, direction, weapon) {
-      originalSpawn(source, position, direction, weapon);
+    wrap(game, "spawnProjectile", (original, ctx, args) => {
+      const [source, position, direction, weapon] = args;
+      original(source, position, direction, weapon);
 
       /* 총알 색으로 편을 가른다 — 병과별 색은 예쁘지만 교전 중에는
          "내 편이 쏜 것인가"가 먼저 보여야 한다. */
       const shooterId = controlledId(source);
-      if (!shooterId || !active || this.phase !== "playing") return;
+      if (!shooterId || !active || ctx.phase !== "playing") return;
       send({
         type: "shot",
         playerId: shooterId,
@@ -206,25 +212,15 @@
         dir: Math.atan2(direction.y, direction.x),
         weaponId: weapon?.id || source.weapon?.id || null,
       });
-    };
+    });
 
-    const segmentHitsCircle = (start, end, center, radius) => {
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const lengthSq = dx * dx + dy * dy;
-      const amount = lengthSq > 1e-9
-        ? Math.max(0, Math.min(1, ((center.x - start.x) * dx + (center.y - start.y) * dy) / lengthSq))
-        : 0;
-      const px = start.x + dx * amount;
-      const py = start.y + dy * amount;
-      return (center.x - px) ** 2 + (center.y - py) ** 2 <= radius * radius;
-    };
+    const segmentHitsCircle = (start, end, center, radius) => segmentCircleHit(start, end, center, radius);
 
-    const originalUpdateProjectiles = game.updateProjectiles.bind(game);
-    game.updateProjectiles = function updateProjectilesAgainstRemoteSummons(dt) {
-      originalUpdateProjectiles(dt);
-      for (let index = this.projectiles.length - 1; index >= 0; index--) {
-        const projectile = this.projectiles[index];
+    wrap(game, "updateProjectiles", (original, ctx, args) => {
+      const [dt] = args;
+      original(dt);
+      for (let index = ctx.projectiles.length - 1; index >= 0; index--) {
+        const projectile = ctx.projectiles[index];
         const attackerId = controlledId(projectile.source);
         if (!attackerId || !projectile._prevPos) continue;
         let hit = null;
@@ -249,9 +245,9 @@
           summonId: hit.marker.userData.summonId,
           damage: projectile.damage,
         });
-        this.removeProjectile(index);
+        ctx.removeProjectile(index);
       }
-    };
+    });
 
     /* 코어 AI 는 표적이 this.player 로 못박혀 있다. 봇마다 표적을 골라
        잠깐 바꿔치기해서 원본 AI 를 그대로 쓴다. */
@@ -280,34 +276,34 @@
       return () => Object.assign(camera, saved);
     };
 
-    const originalUpdateBots = game.updateBots.bind(game);
-    game.updateBots = function updateBotsPerTarget(dt) {
-      if (!hostBots.length) { originalUpdateBots(dt); return; }
-      const realPlayer = this.player;
-      const realBots = this.bots;
+    wrap(game, "updateBots", (original, ctx, args) => {
+      const [dt] = args;
+      if (!hostBots.length) { original(dt); return; }
+      const realPlayer = ctx.player;
+      const realBots = ctx.bots;
       try {
         for (const bot of hostBots) {
           if (!bot.alive) continue;
           const target = nearestFoe(bot);
           if (!target) continue;
           bot._aiTarget = target;
-          this.player = target;
-          this.bots = [bot];
+          ctx.player = target;
+          ctx.bots = [bot];
           const restoreCamera = target === realPlayer ? null : widenCamera();
-          try { originalUpdateBots(dt); } finally { restoreCamera?.(); }
+          try { original(dt); } finally { restoreCamera?.(); }
         }
       } finally {
-        this.player = realPlayer;
-        this.bots = realBots;
+        ctx.player = realPlayer;
+        ctx.bots = realBots;
       }
-    };
+    });
 
-    const originalMoveActor = game.moveActor.bind(game);
-    game.moveActor = function networkSlow(actor, delta) {
-      const slowed = actor === this.player && performance.now() < (this._networkSlowUntil || 0);
-      const movement = slowed ? delta.clone().multiplyScalar(this._networkSlowMult ?? 0.7) : delta;
-      originalMoveActor(actor, movement);
-    };
+    wrap(game, "moveActor", (original, ctx, args) => {
+      const [actor, delta] = args;
+      const slowed = actor === ctx.player && performance.now() < (ctx._networkSlowUntil || 0);
+      const movement = slowed ? delta.clone().multiplyScalar(ctx._networkSlowMult ?? 0.7) : delta;
+      original(actor, movement);
+    });
 
     /* 투망 둔화·덫 포박을 상대(사람)에게 전파한다. operator-system.js 의
        applyControlEffect 가 이 훅을 호출한다(있을 때만). */
@@ -335,11 +331,11 @@
       return { ally, enemy };
     };
 
-    const originalStep = game.step.bind(game);
-    game.step = function networkStep(dt) {
+    wrap(game, "step", (original, ctx, args) => {
+      const [dt] = args;
       if (active) syncRemoteActors(dt);
-      originalStep(dt);
-      if (!active || this.phase !== "playing") return;
+      original(dt);
+      if (!active || ctx.phase !== "playing") return;
       const now = performance.now();
       // 방장이 돌리는 봇의 위치도 같은 주기로 대신 보고한다.
       for (const bot of hostBots) {
@@ -359,19 +355,18 @@
       // shots 는 결과창 명중률용 — 서버는 총알을 모른다.
       send({
         type: "state",
-        x: this.player.pos.x,
-        y: this.player.pos.y,
-        dir: this.player.dir,
-        shots: this.player.shots,
+        x: ctx.player.pos.x,
+        y: ctx.player.pos.y,
+        dir: ctx.player.dir,
+        shots: ctx.player.shots,
         fx: localFx(),
       });
-    };
+    });
 
-    const originalEnd = game.endRound.bind(game);
-    game.endRound = function networkEnd(success, reason) {
+    wrap(game, "endRound", (original, ctx, args) => {
       if (!serverEnding) return;
-      originalEnd(success, reason);
-    };
+      original(...args);
+    });
   }
 
   function finish(winner) {
@@ -386,35 +381,18 @@
      전혀 보이지 않았다. 쓰는 쪽이 위치 갱신에 효과 상태를 얹어 보내고,
      받는 쪽이 같은 자리에 같은 모양을 그린다(판정은 서버 몫, 이건 그림뿐이다). */
 
-  const stripMesh = (color, opacity = 0.9) => {
-    const strip = game.floor.clone(false);
-    strip.geometry = game.floor.geometry.clone();
-    strip.material = game.floor.material.clone();
-    strip.material.color.setHex(color);
-    strip.material.transparent = true;
-    strip.material.depthWrite = false;
-    strip.material.opacity = opacity;
-    game.fxGroup.add(strip);
-    return strip;
+  /* 프리미티브는 shared-utils 의 createFxPool 단일 구현을 쓴다.
+     game 은 waitForGame 에서 할당되므로 풀은 첫 사용 시점에 만든다. */
+  const fxPool = () => (game._fxPool ||= createFxPool(game));
+  const stripMesh = (color, opacity = 0.9) => fxPool().strip(color, opacity);
+  const placeStrip = (strip, from, to, width) => fxPool().place(strip, from, to, width, 22);
+  const disposeStrip = (strip) => fxPool().dispose(strip);
+  const markerMesh = (color, scale = 0.45, opacity = 0.8) => {
+    const marker = fxPool().marker(color, scale, opacity);
+    game.fxGroup.add(marker);
+    return marker;
   };
-
-  const placeStrip = (strip, from, to, width) => {
-    const params = game.floor.geometry?.parameters || {};
-    const baseWidth = params.width || 2600;
-    const baseHeight = params.height || 1800;
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const length = Math.max(1, Math.hypot(dx, dy));
-    strip.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, 22);
-    strip.rotation.z = Math.atan2(dy, dx);
-    strip.scale.set(length / baseWidth, width / baseHeight, 1);
-  };
-
-  const disposeStrip = (strip) => {
-    strip.parent?.remove(strip);
-    strip.geometry?.dispose?.();
-    strip.material?.dispose?.();
-  };
+  const disposeMarker = (marker) => fxPool().dispose(marker);
 
   /* 내 화면에서 지금 켜져 있는 효과를 요약한다. 위치 전송에 함께 실린다. */
   function localFx() {
@@ -478,8 +456,7 @@
     if (Number.isFinite(flashSerial)) fx.f = [flashSerial, Number(game.player.dir.toFixed(2))];
     const railSerial = game.activeOperatorId === "sentinel" ? game.player.shots : 0;
     if (railSerial > 0) {
-      const halfWidth = (game.camera.right - game.camera.left) / 2;
-      const halfHeight = (game.camera.top - game.camera.bottom) / 2;
+      const { halfWidth, halfHeight } = cameraHalfExtents(game.camera);
       fx.l = [railSerial, Number(game.player.dir.toFixed(2)), Math.round(Math.hypot(halfWidth, halfHeight))];
     }
     if (game._revealUntil > game.now) {
@@ -498,25 +475,6 @@
     return Object.keys(fx).length ? fx : null;
   }
 
-  const markerMesh = (color, scale = 0.45, opacity = 0.8) => {
-    const marker = game.player.body.clone(false);
-    marker.geometry = game.player.body.geometry.clone();
-    marker.material = game.player.body.material.clone();
-    marker.material.color.setHex(color);
-    marker.material.transparent = true;
-    marker.material.depthWrite = false;
-    marker.material.opacity = opacity;
-    marker.scale.setScalar(scale);
-    game.fxGroup.add(marker);
-    return marker;
-  };
-
-  const disposeMarker = (marker) => {
-    marker?.parent?.remove(marker);
-    marker?.geometry?.dispose?.();
-    marker?.material?.dispose?.();
-  };
-
   const syncPointMarkers = (entry, key, points, color, scale, xIndex = 0, yIndex = 1) => {
     const markers = entry[key] || [];
     while (markers.length < points.length) markers.push(markerMesh(color, scale));
@@ -527,7 +485,6 @@
 
   /* 덫 위험 구역 링(반경 radius)을 선명한 선으로 그린다. 덫은 정적이라 위치가
      바뀔 때만 재배치하면 된다. 색/투명도는 visibility 단계에서 팀별로 준다. */
-  const TRAP_RING_SEGMENTS = 20;
   const syncTrapRings = (entry, points) => {
     const rings = entry.trapRings || [];
     const need = points.length * TRAP_RING_SEGMENTS;
@@ -866,7 +823,7 @@
     }
     entry.meleeProgress = progress;
     const halfAngle = actor.operatorId === "reaper" ? B.operators.reaper.meleeHalfAngle : B.operators.ninja.meleeHalfAngle;
-    const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+    const eased = easeSwing(progress);
     const localAngle = side === 1
       ? -halfAngle + eased * halfAngle * 2
       : halfAngle - eased * halfAngle * 2;

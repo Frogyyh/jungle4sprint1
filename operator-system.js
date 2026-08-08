@@ -8,12 +8,19 @@
    * game.html 의 quality-pass.js 직후에 로드된다.
    * ============================================================ */
 
-  // 공용 헬퍼 — installFrog / installOperatorSystem 가 함께 쓴다.
-  // vec·vector 는 game.player.pos.constructor 를 지연 평가하므로
-  // 게임 초기화 후 호출 시점에만 참조한다(정의 시점 참조 없음).
-  const vec = (x = 0, y = 0) => new (window.__breachline).player.pos.constructor(x, y);
-  const vector = vec;
-  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  // 공용 헬퍼 — shared-utils.js 의 단일 구현을 installFrog / installOperatorSystem 가 함께 쓴다.
+  const {
+    clamp,
+    vec,
+    vector,
+    angleDelta,
+    easeSwing,
+    segmentCircleHit,
+    cameraHalfExtents,
+    TRAP_RING_SEGMENTS,
+    wrap,
+    createFxPool,
+  } = window.BREACHLINE_UTIL;
 
   const installFrog = () => {
     const game = window.__breachline;
@@ -421,10 +428,9 @@
       for (const child of game.player.mesh.children.slice(2)) child.visible = true;
     };
 
-    const originalStartRound = game.startRound.bind(game);
-    game.startRound = function startRoundWithFrog() {
-      const wantsFrog = this.selectedWeapon === "frog";
-      if (wantsFrog) this.selectedWeapon = "rifle";
+    wrap(game, "startRound", (original, ctx) => {
+      const wantsFrogWeapon = ctx.selectedWeapon === "frog";
+      if (wantsFrogWeapon) ctx.selectedWeapon = "rifle";
       disposeTongue();
       disposeVisionRing();
       canLaunchTongue = true;
@@ -434,32 +440,32 @@
       autoBubbleCount = 0;
       frogMomentum.set(0, 0);
       while (waterDrips.length) disposeWaterDrip(waterDrips.length - 1);
-      originalStartRound();
-      if (wantsFrog) {
-        this.selectedWeapon = "frog";
-        this.player.weapon = FROG;
-        this.player.ammo = FROG.magSize;
-        this.player.reserve = FROG.reserve;
+      original();
+      if (wantsFrogWeapon) {
+        ctx.selectedWeapon = "frog";
+        ctx.player.weapon = FROG;
+        ctx.player.ammo = FROG.magSize;
+        ctx.player.reserve = FROG.reserve;
         applyAppearance(true);
-        this.renderUi();
-        this.showToast("FROG READY — LMB WATER / SPACE TONGUE");
+        ctx.renderUi();
+        ctx.showToast("FROG READY — LMB WATER / SPACE TONGUE");
       } else {
         applyAppearance(false);
       }
-    };
+    });
 
-    const originalSpawnProjectile = game.spawnProjectile.bind(game);
-    game.spawnProjectile = function spawnSoapBubble(source, position, direction, weapon) {
-      originalSpawnProjectile(source, position, direction, weapon);
-      const frogProjectile = source === this.player
+    wrap(game, "spawnProjectile", (original, ctx, args) => {
+      const [source, position, direction, weapon] = args;
+      original(source, position, direction, weapon);
+      const frogProjectile = source === ctx.player
         ? isFrog()
         : source?.operatorId === "frog" || ["frog", "frog-auto-bubble"].includes(weapon?.id);
       if (!frogProjectile) return;
 
-      const projectile = this.projectiles[this.projectiles.length - 1];
+      const projectile = ctx.projectiles[ctx.projectiles.length - 1];
       if (!projectile) return;
       const oldGeometry = projectile.mesh.geometry;
-      projectile.mesh.geometry = this.player.body.geometry.clone();
+      projectile.mesh.geometry = ctx.player.body.geometry.clone();
       oldGeometry.dispose();
       const bubbleColors = [0x7eeeff, 0xa7f4ff, 0x88d8ff, 0xd1fbff];
       projectile.mesh.material.color.setHex(bubbleColors[Math.floor(Math.random() * bubbleColors.length)]);
@@ -471,71 +477,70 @@
       projectile.velocity.multiplyScalar(0.88 + Math.random() * 0.24);
       projectile.remaining *= 0.92 + Math.random() * 0.16;
       projectile.isSoapBubble = true;
-    };
+    });
 
-    const originalFire = game.fire.bind(game);
-    game.fire = function fireWaterGun(actor, angle) {
-      if (actor !== this.player || !isFrog()) {
-        originalFire(actor, angle);
+    wrap(game, "fire", (original, ctx, args) => {
+      const [actor, angle] = args;
+      if (actor !== ctx.player || !isFrog()) {
+        original(actor, angle);
         return;
       }
-      const shakeBefore = this.cameraShake || 0;
-      const alertBots = this.alertBotsToGunshot;
-      this.alertBotsToGunshot = () => {};
+      const shakeBefore = ctx.cameraShake || 0;
+      const alertBots = ctx.alertBotsToGunshot;
+      ctx.alertBotsToGunshot = () => {};
       try {
-        originalFire(actor, angle);
+        original(actor, angle);
       } finally {
-        this.alertBotsToGunshot = alertBots;
+        ctx.alertBotsToGunshot = alertBots;
       }
-      this.cameraShake = Math.min(shakeBefore + 0.55, this.cameraShake || 0.55);
+      ctx.cameraShake = Math.min(shakeBefore + 0.55, ctx.cameraShake || 0.55);
       document.querySelector("#muzzle-flash")?.classList.remove("active");
-    };
+    });
 
-    const originalUpdatePlayer = game.updatePlayer.bind(game);
-    game.updatePlayer = function updateFrogPlayer(dt) {
+    wrap(game, "updatePlayer", (original, ctx, args) => {
+      const [dt] = args;
       if (isFrog() && tongue && tongue.phase === "attached") {
-        const heldKeys = this.keys;
-        this.keys = new Set();
-        originalUpdatePlayer(dt);
-        this.keys = heldKeys;
+        const heldKeys = ctx.keys;
+        ctx.keys = new Set();
+        original(dt);
+        ctx.keys = heldKeys;
       } else {
-        originalUpdatePlayer(dt);
+        original(dt);
       }
       if (isFrog()) updateTongue(dt);
       if (isFrog() && tongue?.phase !== "attached" && frogMomentum.lengthSq() > 1) {
-        this.moveActor(this.player, frogMomentum.clone().multiplyScalar(dt));
-        const steering = this.keys.has("KeyW") || this.keys.has("KeyA")
-          || this.keys.has("KeyS") || this.keys.has("KeyD");
+        ctx.moveActor(ctx.player, frogMomentum.clone().multiplyScalar(dt));
+        const steering = ctx.keys.has("KeyW") || ctx.keys.has("KeyA")
+          || ctx.keys.has("KeyS") || ctx.keys.has("KeyD");
         const damping = steering ? FROG_MOMENTUM_DAMPING * 0.35 : FROG_MOMENTUM_DAMPING;
         frogMomentum.multiplyScalar(Math.pow(damping, dt));
         if (frogMomentum.lengthSq() < 4) frogMomentum.set(0, 0);
       }
       updateWaterDrips();
-    };
+    });
 
-    const originalIsVisible = game.isVisible.bind(game);
-    game.isVisible = function isVisibleWithAttachedFrog(observer, target, fov, range) {
+    wrap(game, "isVisible", (original, ctx, args) => {
+      const [observer, target, fov, range] = args;
       if (
         isFrog()
         && tongue?.phase === "attached"
-        && observer === this.player
+        && observer === ctx.player
         && target.alive
-        && target.pos.distanceTo(this.player.pos) <= ATTACHED_VISION_RADIUS
-        && !this.smokeBlocks(this.player.pos, target.pos)
-        && !this.rayBlocked(this.player.pos, target.pos)
+        && target.pos.distanceTo(ctx.player.pos) <= ATTACHED_VISION_RADIUS
+        && !ctx.smokeBlocks(ctx.player.pos, target.pos)
+        && !ctx.rayBlocked(ctx.player.pos, target.pos)
       ) {
         return true;
       }
-      return originalIsVisible(observer, target, fov, range);
-    };
+      return original(observer, target, fov, range);
+    });
 
-    const originalUpdateVisibility = game.updateVisibility.bind(game);
-    game.updateVisibility = function updateAttachedFrogVisibility() {
-      originalUpdateVisibility();
-      if (!isFrog() || tongue?.phase !== "attached" || !this.visibilityMesh?.geometry) return;
-      if (this.visibilityMesh.geometry.userData?.frogAttachedVision) return;
+    wrap(game, "updateVisibility", (original, ctx) => {
+      original();
+      if (!isFrog() || tongue?.phase !== "attached" || !ctx.visibilityMesh?.geometry) return;
+      if (ctx.visibilityMesh.geometry.userData?.frogAttachedVision) return;
 
-      const oldGeometry = this.visibilityMesh.geometry;
+      const oldGeometry = ctx.visibilityMesh.geometry;
       const oldPositions = oldGeometry.getAttribute("position");
       if (!oldPositions) return;
 
@@ -544,15 +549,15 @@
       const points = [];
       for (let index = 0; index <= segments; index += 1) {
         const angle = Math.PI * 2 * index / segments;
-        points.push(this.traceVision(
-          this.player.pos,
+        points.push(ctx.traceVision(
+          ctx.player.pos,
           vec(Math.cos(angle), Math.sin(angle)),
           ATTACHED_VISION_RADIUS,
         ));
       }
       for (let index = 0; index < segments; index += 1) {
         positions.push(
-          this.player.pos.x, this.player.pos.y, 12,
+          ctx.player.pos.x, ctx.player.pos.y, 12,
           points[index].x, points[index].y, 12,
           points[index + 1].x, points[index + 1].y, 12,
         );
@@ -561,54 +566,53 @@
       const geometry = new oldGeometry.constructor();
       geometry.setAttribute("position", new oldPositions.constructor(positions, 3));
       geometry.userData.frogAttachedVision = true;
-      this.visibilityMesh.geometry = geometry;
+      ctx.visibilityMesh.geometry = geometry;
       oldGeometry.dispose();
-    };
+    });
 
-    const originalDamageActor = game.damageActor.bind(game);
-    game.damageActor = function damageWithWaterSlow(source, target, amount) {
+    wrap(game, "damageActor", (original, ctx, args) => {
+      const [source, target, amount] = args;
       const hpBefore = target.hp;
-      originalDamageActor(source, target, amount);
-      if (source === this.player && isFrog() && target.hp < hpBefore) {
-        target.slowUntil = this.now + WATER_SLOW_DURATION;
+      original(source, target, amount);
+      if (source === ctx.player && isFrog() && target.hp < hpBefore) {
+        target.slowUntil = ctx.now + WATER_SLOW_DURATION;
         showWaterDrips(target);
       }
-    };
+    });
 
-    const originalMoveBot = game.moveBot.bind(game);
-    game.moveBot = function moveSlowedBot(bot, dt, direction) {
-      const slowFactor = bot.slowUntil > this.now ? WATER_SLOW_SCALE : 1;
-      originalMoveBot(bot, dt * slowFactor, direction);
-    };
+    wrap(game, "moveBot", (original, ctx, args) => {
+      const [bot, dt, direction] = args;
+      const slowFactor = bot.slowUntil > ctx.now ? WATER_SLOW_SCALE : 1;
+      original(bot, dt * slowFactor, direction);
+    });
 
-    const originalUpdateBots = game.updateBots.bind(game);
-    game.updateBots = function updateSlowVisuals(dt) {
-      originalUpdateBots(dt);
-      for (const bot of this.bots) {
-        bot.ring.material.color.setHex(bot.slowUntil > this.now ? 0x8ab4ff : 0xffb0ac);
+    wrap(game, "updateBots", (original, ctx, args) => {
+      const [dt] = args;
+      original(dt);
+      for (const bot of ctx.bots) {
+        bot.ring.material.color.setHex(bot.slowUntil > ctx.now ? 0x8ab4ff : 0xffb0ac);
       }
-    };
+    });
 
-    const originalRenderUi = game.renderUi.bind(game);
-    game.renderUi = function renderFrogUi() {
-      originalRenderUi();
-      this.canvas.dataset.playerKind = isFrog() ? "frog" : "soldier";
+    wrap(game, "renderUi", (original, ctx) => {
+      original();
+      ctx.canvas.dataset.playerKind = isFrog() ? "frog" : "soldier";
       if (!isFrog()) return;
       applyAppearance(true);
       document.querySelector("#weapon-name").textContent = "FROG BUBBLE SPRAYER";
       document.querySelector("#reload-hint").textContent = tongue && tongue.phase === "attached"
         ? "A/D: SWING · RMB: PULL · RELEASE SPACE"
         : "LMB: WATER GUN · SPACE: WALL TONGUE";
-      this.canvas.dataset.botSlows = this.bots
-        .map((bot) => Math.max(0, bot.slowUntil - this.now).toFixed(2))
+      ctx.canvas.dataset.botSlows = ctx.bots
+        .map((bot) => Math.max(0, bot.slowUntil - ctx.now).toFixed(2))
         .join(",");
-      this.canvas.dataset.soapBubbles = `${this.projectiles.filter((projectile) => projectile.isSoapBubble).length}`;
-      this.canvas.dataset.tongueCooldown = "0.00";
-      this.canvas.dataset.tonguePulling = rightMouseHeld ? "true" : "false";
-      this.canvas.dataset.frogMomentum = frogMomentum.length().toFixed(1);
-      this.canvas.dataset.frogVisionRing = tongue?.phase === "attached" ? "visible" : "hidden";
-      this.canvas.dataset.autoBubbles = `${autoBubbleCount}`;
-    };
+      ctx.canvas.dataset.soapBubbles = `${ctx.projectiles.filter((projectile) => projectile.isSoapBubble).length}`;
+      ctx.canvas.dataset.tongueCooldown = "0.00";
+      ctx.canvas.dataset.tonguePulling = rightMouseHeld ? "true" : "false";
+      ctx.canvas.dataset.frogMomentum = frogMomentum.length().toFixed(1);
+      ctx.canvas.dataset.frogVisionRing = tongue?.phase === "attached" ? "visible" : "hidden";
+      ctx.canvas.dataset.autoBubbles = `${autoBubbleCount}`;
+    });
 
     window.addEventListener("keydown", (event) => {
       if (event.code !== "Space" || event.repeat || game.phase !== "playing" || !isFrog()) return;
@@ -660,7 +664,9 @@
 
     const B = window.BREACHLINE_BALANCE;
 
-    const angleDelta = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+    // fx 프리미티브 풀 — shared-utils 의 단일 구현 (스트립/마커 생성·배치·해제).
+    const fx = createFxPool(game);
+
     const colorHex = (value) => Number.parseInt(value.slice(1), 16);
     const directionTo = (from, to) => to.clone().sub(from).normalize();
     const operator = () => window.findBreachlineOperator(game.activeOperatorId || game.selectedOperatorId);
@@ -882,13 +888,12 @@
       game.showToast(`${selected.name} // ${selected.koreanName} READY`);
     };
 
-    const originalStartRound = game.startRound.bind(game);
-    game.startRound = function startOperatorRound() {
-      const selected = window.findBreachlineOperator(this.selectedOperatorId);
-      this.selectedWeapon = selected.baseWeapon;
-      originalStartRound();
+    wrap(game, "startRound", (original, ctx) => {
+      const selected = window.findBreachlineOperator(ctx.selectedOperatorId);
+      ctx.selectedWeapon = selected.baseWeapon;
+      original();
       applyOperator(selected);
-    };
+    });
 
     game.canUseGadget = (type) => (
       (isOperator("soldier") && type === "flash")
@@ -900,16 +905,7 @@
       smoke: game.player.smokeGrenades || 0,
     }[type] || 0);
 
-    const createEffectMesh = (color, scale = 0.45) => {
-      const mesh = game.player.body.clone(false);
-      mesh.geometry = game.player.body.geometry.clone();
-      mesh.material = game.player.body.material.clone();
-      mesh.material.color.setHex(color);
-      mesh.material.transparent = true;
-      mesh.material.opacity = 0.95;
-      mesh.scale.setScalar(scale);
-      return mesh;
-    };
+    const createEffectMesh = (color, scale = 0.45) => fx.marker(color, scale, 0.95);
 
     const eachMaterial = (mesh, callback) => {
       mesh.traverse((part) => {
@@ -934,28 +930,9 @@
       game._railFxNextAt = 0;
     };
 
-    const setStripTransform = (mesh, from, to, width) => {
-      const dx = to.x - from.x;
-      const dy = to.y - from.y;
-      const length = Math.max(0.01, Math.hypot(dx, dy));
-      const parameters = game.floor.geometry?.parameters || {};
-      const baseWidth = parameters.width || 2600;
-      const baseHeight = parameters.height || 1800;
-      mesh.position.set((from.x + to.x) / 2, (from.y + to.y) / 2, 23);
-      mesh.rotation.z = Math.atan2(dy, dx);
-      mesh.scale.set(length / baseWidth, width / baseHeight, 1);
-    };
-
     const createWorldStrip = (from, to, width, color, options = {}) => {
-      const strip = game.floor.clone(false);
-      strip.geometry = game.floor.geometry.clone();
-      strip.material = game.floor.material.clone();
-      strip.material.color.setHex(color);
-      strip.material.transparent = true;
-      strip.material.depthWrite = false;
-      strip.material.opacity = options.opacity ?? 0.85;
-      setStripTransform(strip, from, to, width);
-      game.fxGroup.add(strip);
+      const strip = fx.strip(color, options.opacity ?? 0.85);
+      fx.place(strip, from, to, width);
       const effect = {
         mesh: strip,
         startAt: game.now,
@@ -1124,8 +1101,8 @@
         game.applyWeaponVisual(game.player, operator().weaponId);
         return;
       }
-      const progress = clamp((game.now - swing.startedAt) / Math.max(0.01, swing.until - swing.startedAt), 0, 1);
-      const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+        const progress = clamp((game.now - swing.startedAt) / Math.max(0.01, swing.until - swing.startedAt), 0, 1);
+        const eased = easeSwing(progress);
       const localAngle = swing.side === 1
         ? -swing.halfAngle + eased * swing.halfAngle * 2
         : swing.halfAngle - eased * swing.halfAngle * 2;
@@ -1164,7 +1141,7 @@
         const progress = clamp((game.now - effect.startAt) / Math.max(0.001, effect.endAt - effect.startAt), 0, 1);
         if (effect.follow) {
           const [from, to] = effect.follow();
-          setStripTransform(effect.mesh, from, to, effect.width || 2.8);
+          fx.place(effect.mesh, from, to, effect.width || 2.8);
         }
         if (effect.mesh.material && !effect.update) effect.mesh.material.opacity = effect.baseOpacity * (1 - progress);
         effect.update?.(progress);
@@ -1216,9 +1193,9 @@
       game.fxGroup.add(mesh);
       const grenade = {
         id: Date.now() + Math.random(), type, owner: actor, pos,
-        vel: direction.multiplyScalar((type === "launcher" ? 620 : 500) * power),
-        fuse: type === "frag" ? 2 : 1.5,
-        initialFuse: type === "frag" ? 2 : 1.5,
+        vel: direction.multiplyScalar((type === "launcher" ? B.gadgets.launcher.speed : B.gadgets.throwSpeed) * power),
+        fuse: B.gadgets[type]?.fuse ?? 1.5,
+        initialFuse: B.gadgets[type]?.fuse ?? 1.5,
         mesh,
       };
       grenade.predictedLanding = game.predictGrenadeLanding?.(actor, type, power, aim) || pos.clone();
@@ -1236,6 +1213,11 @@
         if (!target.alive || target.team === source.team || target.pos.distanceTo(point) > radius) continue;
         game.damageActor(source, target, damage);
         hits++;
+      }
+      // 소환수는 일반 캐릭터와 동일하게 폭발에 맞는다(적 팀 소환수만).
+      for (const summon of game._summons) {
+        if (summon.team === source.team || summon.pos.distanceTo(point) > radius) continue;
+        if (damageSummon(summon.id)) hits++;
       }
       return hits;
     };
@@ -1358,47 +1340,46 @@
       });
     };
 
-    const originalExplode = game.explode.bind(game);
-    game.explode = function explodeOperatorGrenade(grenade) {
+    wrap(game, "explode", (original, ctx, args) => {
+      const [grenade] = args;
       if (grenade.type === "frag" || grenade.type === "launcher") {
         const radius = grenade.type === "frag" ? B.gadgets.frag.radius : B.gadgets.launcher.radius;
         const damage = grenade.type === "frag" ? B.gadgets.frag.damage : B.gadgets.launcher.damage;
         const hits = damageInRadius(grenade.owner, grenade.pos, radius, damage);
         if (grenade.type === "frag") showFragBurst(grenade, radius);
         else showLauncherBurst(grenade, radius);
-        if (grenade.owner === this.player) this.showToast(`${grenade.type.toUpperCase()} IMPACT · ${hits} HIT`);
+        if (grenade.owner === ctx.player) ctx.showToast(`${grenade.type.toUpperCase()} IMPACT · ${hits} HIT`);
         disposeFxMesh(grenade.mesh);
         return;
       }
-      const smokeCount = this.smokes.length;
-      originalExplode(grenade);
-      if (grenade.ninjaSmoke && this.smokes.length > smokeCount) {
-        const smoke = this.smokes[this.smokes.length - 1];
+      const smokeCount = ctx.smokes.length;
+      original(grenade);
+      if (grenade.ninjaSmoke && ctx.smokes.length > smokeCount) {
+        const smoke = ctx.smokes[ctx.smokes.length - 1];
         smoke.ninjaSmoke = true;
         smoke.owner = grenade.owner;
         smoke.radius = NINJA_SMOKE_RADIUS;
-        smoke.endAt = this.now + NINJA_SMOKE_DURATION;
+        smoke.endAt = ctx.now + NINJA_SMOKE_DURATION;
         smoke.mesh.scale.setScalar(NINJA_SMOKE_RADIUS / 150);
       }
       if (grenade.type === "flash") showFlashBurst(grenade);
-      if (grenade.type === "smoke" && this.smokes.length > smokeCount) {
-        styleSmokeCloud(this.smokes[this.smokes.length - 1]);
+      if (grenade.type === "smoke" && ctx.smokes.length > smokeCount) {
+        styleSmokeCloud(ctx.smokes[ctx.smokes.length - 1]);
       }
       disposeFxMesh(grenade.mesh);
-    };
+    });
 
-    const originalUpdateSmokes = game.updateSmokes.bind(game);
-    game.updateSmokes = function updateClusteredSmokes() {
-      for (const smoke of this.smokes) {
-        if (smoke.endAt > this.now || !smoke.mesh?.userData?.breachlineSmokeCluster) continue;
+    wrap(game, "updateSmokes", (original, ctx) => {
+      for (const smoke of ctx.smokes) {
+        if (smoke.endAt > ctx.now || !smoke.mesh?.userData?.breachlineSmokeCluster) continue;
         for (const child of smoke.mesh.children) {
           if (child.userData?.breachlineSmokePuff && child.material !== smoke.mesh.material) {
             child.material?.dispose?.();
           }
         }
       }
-      originalUpdateSmokes();
-    };
+      original();
+    });
 
     const meleeAttack = (damage, range, halfAngle) => {
       if (game.now < game.player.nextShotAt || !game.player.alive) return;
@@ -1422,6 +1403,17 @@
         game.damageActor(game.player, target, damage);
         hits++;
       }
+      // 소환수는 일반 캐릭터와 동일하게 근접 공격에 맞는다(적 팀 소환수만).
+      const summonHitRadius = B.operators.reaper.summon.hitRadius;
+      for (const summon of game._summons) {
+        if (summon.team === game.player.team) continue;
+        const delta = summon.pos.clone().sub(game.player.pos);
+        if (delta.length() > range + summonHitRadius) continue;
+        if (Math.abs(angleDelta(Math.atan2(delta.y, delta.x), game.player.dir)) > halfAngle) continue;
+        if (game.rayBlocked(game.player.pos, summon.pos)) continue;
+        game.player.hits++;
+        if (damageSummon(summon.id)) hits++;
+      }
       game.cameraShake = Math.max(game.cameraShake, hits ? 5 : 2);
       game.showToast(hits ? `MELEE HIT ×${hits}` : "MELEE SWING");
     };
@@ -1429,8 +1421,7 @@
     // 레일건 사거리 = 현재 카메라 화면(1.25x/1.5x 확대 포함)의 대각선 거리.
     // 식별 가능한 최대 범위까지 벽을 관통하는 히트스캔을 허용한다.
     const railgunRange = () => {
-      const halfWidth = (game.camera.right - game.camera.left) / 2;
-      const halfHeight = (game.camera.top - game.camera.bottom) / 2;
+      const { halfWidth, halfHeight } = cameraHalfExtents(game.camera);
       return Math.hypot(halfWidth, halfHeight);
     };
 
@@ -1537,14 +1528,14 @@
       game.canvas.dataset.lastLauncherShot = `${Math.round(targetPos.x)}:${Math.round(targetPos.y)}`;
     };
 
-    const originalUpdateGrenades = game.updateGrenades.bind(game);
-    game.updateGrenades = function updateDirectFireGrenades(dt) {
+    wrap(game, "updateGrenades", (original, ctx, args) => {
+      const [dt] = args;
       // 직사 유탄은 코어의 투척 물리/신관에서 분리해 직접 처리한다.
       // 코어 실행 전에 꺼냈다가 실행 후 되돌려, 코어가 유탄을 건드리지 않게 한다.
       const direct = [];
-      for (let index = this.grenades.length - 1; index >= 0; index--) {
-        if (!this.grenades[index].directFire) continue;
-        direct.push(this.grenades.splice(index, 1)[0]);
+      for (let index = ctx.grenades.length - 1; index >= 0; index--) {
+        if (!ctx.grenades[index].directFire) continue;
+        direct.push(ctx.grenades.splice(index, 1)[0]);
       }
       for (let index = direct.length - 1; index >= 0; index--) {
         const grenade = direct[index];
@@ -1553,7 +1544,7 @@
         const detonate = (at) => {
           grenade.pos.copy(at);
           grenade.mesh.position.set(at.x, at.y, 16);
-          this.explode(grenade);
+          ctx.explode(grenade);
           direct.splice(index, 1);
         };
         if (toTarget.lengthSq() <= step * step) {
@@ -1563,20 +1554,20 @@
         const move = toTarget.normalize().multiplyScalar(step);
         const nextX = grenade.pos.clone().add(vector(move.x, 0));
         const nextY = grenade.pos.clone().add(vector(0, move.y));
-        if (this.collides(nextX, 9)) {
+        if (ctx.collides(nextX, 9)) {
           detonate(grenade.pos.clone().add(vector(move.x * 0.5, 0)));
           continue;
         }
         grenade.pos.x = nextX.x;
-        if (this.collides(nextY, 9)) {
+        if (ctx.collides(nextY, 9)) {
           detonate(grenade.pos.clone().add(vector(0, move.y * 0.5)));
           continue;
         }
         grenade.pos.y = nextY.y;
         grenade.mesh.position.set(grenade.pos.x, grenade.pos.y, 16);
         // 비행 트레일 (잔상)
-        if (this.now >= (grenade.trailAt || 0)) {
-          grenade.trailAt = this.now + 0.03;
+        if (ctx.now >= (grenade.trailAt || 0)) {
+          grenade.trailAt = ctx.now + 0.03;
           createWorldStrip(grenade.prevPos, grenade.pos.clone(), 2.4, 0xffa8f0, {
             duration: 0.16,
             opacity: 0.8,
@@ -1584,20 +1575,20 @@
           grenade.prevPos.copy(grenade.pos);
         }
       }
-      originalUpdateGrenades(dt);
-      for (const grenade of direct) this.grenades.push(grenade);
-    };
+      original(dt);
+      for (const grenade of direct) ctx.grenades.push(grenade);
+    });
 
-    const originalFire = game.fire.bind(game);
-    game.fire = function fireByOperator(actor, aim) {
-      if (actor !== this.player) {
-        originalFire(actor, aim);
+    wrap(game, "fire", (original, ctx, args) => {
+      const [actor, aim] = args;
+      if (actor !== ctx.player) {
+        original(actor, aim);
         return;
       }
-      if (this._selectedGadget) return;
+      if (ctx._selectedGadget) return;
       // Iron keeps the shield deployed while firing the pistol.
       if (isOperator("bulwark")) {
-        originalFire(actor, aim);
+        original(actor, aim);
         return;
       }
       if (isOperator("reaper")) return meleeAttack(WEAPONS.reaper.damage, WEAPONS.reaper.range, B.operators.reaper.meleeHalfAngle);
@@ -1606,18 +1597,18 @@
       if (isOperator("demolitionist")) return fireLauncher();
       const shotsBefore = actor.shots;
       const scheduledBefore = actor.nextShotAt;
-      originalFire(actor, aim);
+      original(actor, aim);
       if (isOperator("gunslinger") && actor.shots > shotsBefore) {
         const interval = 60 / WEAPONS.gunslinger.rpm;
-        const continuousSchedule = scheduledBefore > 0 && this.now - scheduledBefore <= interval * 1.5;
-        actor.nextShotAt = continuousSchedule ? scheduledBefore + interval : this.now + interval;
+        const continuousSchedule = scheduledBefore > 0 && ctx.now - scheduledBefore <= interval * 1.5;
+        actor.nextShotAt = continuousSchedule ? scheduledBefore + interval : ctx.now + interval;
       }
-    };
+    });
 
-    const originalSpawnProjectile = game.spawnProjectile.bind(game);
-    game.spawnProjectile = function spawnOperatorProjectile(source, position, direction, weapon) {
+    wrap(game, "spawnProjectile", (original, ctx, args) => {
+      const [source, position, direction, weapon] = args;
       let muzzle = position;
-      const gunslinger = source === this.player ? isOperator("gunslinger") : source?.operatorId === "gunslinger";
+      const gunslinger = source === ctx.player ? isOperator("gunslinger") : source?.operatorId === "gunslinger";
       if (gunslinger) {
         source._gunHand = source._gunHand || 1;
         const perpendicular = vector(-direction.y, direction.x).multiplyScalar(7 * source._gunHand);
@@ -1627,12 +1618,12 @@
         // 다발 펠릿(샷건 등): 발사원에 가깝게 생성해 근거리에서도 전탄이 적중한다.
         muzzle = position.clone().sub(direction.clone().multiplyScalar(6));
       }
-      originalSpawnProjectile(source, muzzle, direction, weapon);
-      const projectile = this.projectiles[this.projectiles.length - 1];
-      if ((source === this.player ? isOperator("sniper") : source?.operatorId === "sniper") && projectile) {
+      original(source, muzzle, direction, weapon);
+      const projectile = ctx.projectiles[ctx.projectiles.length - 1];
+      if ((source === ctx.player ? isOperator("sniper") : source?.operatorId === "sniper") && projectile) {
         projectile.mesh.scale.set(1.5, 1.35, 1);
       }
-    };
+    });
 
     const getWasmDir = () => {
       const x = (game.keys.has("KeyD") ? 1 : 0) - (game.keys.has("KeyA") ? 1 : 0);
@@ -1873,13 +1864,13 @@
       // 멀티플레이: 상대가 사람이면 서버에 둔화/포박을 알린다(있을 때만).
       game._onControlEffect?.(target, factor, seconds);
     };
-    const originalMoveBotForControl = game.moveBot.bind(game);
-    game.moveBot = function moveBotWithControl(bot, dt, direction) {
+    wrap(game, "moveBot", (original, ctx, args) => {
+      const [bot, dt, direction] = args;
       let factor = 1;
-      if ((bot.rootUntil || 0) > game.now) factor = 0;                       // 덫 포박
-      else if ((bot.netSlowUntil || 0) > game.now) factor = B.operators.sniper.net.slowMult; // 투망 둔화
-      originalMoveBotForControl(bot, dt * factor, direction);
-    };
+      if ((bot.rootUntil || 0) > ctx.now) factor = 0;                       // 덫 포박
+      else if ((bot.netSlowUntil || 0) > ctx.now) factor = B.operators.sniper.net.slowMult; // 투망 둔화
+      original(bot, dt * factor, direction);
+    });
 
     // ---- 존 익: 부채꼴 난사 (우클릭) ----
     const SPRAY = B.operators.gunslinger.spray;
@@ -2128,25 +2119,18 @@
     };
     // 위험 구역 링 — 지속 스트립으로 만든다(원격과 동일). 매 프레임 새로 그리면
     // 각 조각이 페이드아웃돼 본체와 따로 깜빡이므로, 고정 스트립의 투명도만 갱신한다.
-    const TRAP_RING_SEGMENTS = 20;
     const makeTrapRing = (pos) => {
       const strips = [];
       for (let index = 0; index < TRAP_RING_SEGMENTS; index++) {
-        const strip = game.floor.clone(false);
-        strip.geometry = game.floor.geometry.clone();
-        strip.material = game.floor.material.clone();
-        strip.material.color.setHex(TRAP.allyColor);
-        strip.material.transparent = true;
-        strip.material.depthWrite = false;
+        const strip = fx.strip(TRAP.allyColor, 0.5);
         const angleA = index / TRAP_RING_SEGMENTS * Math.PI * 2;
         const angleB = (index + 1) / TRAP_RING_SEGMENTS * Math.PI * 2;
-        setStripTransform(
+        fx.place(
           strip,
           vector(pos.x + Math.cos(angleA) * TRAP.radius, pos.y + Math.sin(angleA) * TRAP.radius),
           vector(pos.x + Math.cos(angleB) * TRAP.radius, pos.y + Math.sin(angleB) * TRAP.radius),
           3,
         );
-        game.fxGroup.add(strip);
         strips.push(strip);
       }
       return strips;
@@ -2540,6 +2524,7 @@
         game.entityGroup.add(mesh);
         game._summons.push({
           id: ++game._summonSerial,
+          team: game.player.team,
           pos,
           mesh,
           hp: 1,
@@ -2777,68 +2762,68 @@
       useAbility();
     }, true);
 
-    const originalDamageActor = game.damageActor.bind(game);
-    game.damageActor = function damageWithOperatorRules(source, target, amount) {
+    wrap(game, "damageActor", (original, ctx, args) => {
+      const [source, target, amount] = args;
       if (!target?.alive || source?.team === target.team) return;
-      if (target === this.player && this._operatorDash?.invulnerable) return;
+      if (target === ctx.player && ctx._operatorDash?.invulnerable) return;
       // 아이언 방벽: 전방 공격(투사체·히트스캔)을 방벽 체력으로 흡수한다.
-      if (target === this.player && isOperator("bulwark") && source?.pos && barrierBlocks(source.pos, target.pos)) {
+      if (target === ctx.player && isOperator("bulwark") && source?.pos && barrierBlocks(source.pos, target.pos)) {
         absorbBarrierDamage(amount);
-        this.canvas.dataset.lastBarrierBlock = `${Math.round(this.now * 100) / 100}:${amount}`;
+        ctx.canvas.dataset.lastBarrierBlock = `${Math.round(ctx.now * 100) / 100}:${amount}`;
         return;
       }
       const before = target.hp;
-      originalDamageActor(source, target, amount);
-      if (target.hp < before) target.lastDamageAt = this.now;
-    };
+      original(source, target, amount);
+      if (target.hp < before) target.lastDamageAt = ctx.now;
+    });
 
-    const originalMoveActor = game.moveActor.bind(game);
-    game.moveActor = function moveWithOperatorSpeed(actor, delta) {
+    wrap(game, "moveActor", (original, ctx, args) => {
+      const [actor, delta] = args;
       let movement = delta;
-      if (actor === this.player && !this._operatorForcedMove) {
+      if (actor === ctx.player && !ctx._operatorForcedMove) {
         if (isOperator("sniper")) movement = delta.clone().multiplyScalar(0.75);
-        else if (isOperator("ninja") && this.isInsideSmoke(this.player.pos)) movement = delta.clone().multiplyScalar(1.5);
+        else if (isOperator("ninja") && ctx.isInsideSmoke(ctx.player.pos)) movement = delta.clone().multiplyScalar(1.5);
         else if (isOperator("ninja")) movement = delta.clone().multiplyScalar(1.2); // 닌자 기본 이동속도 +20%
-        else if (isOperator("bulwark") && this._barrier?.active) movement = delta.clone().multiplyScalar(0.5);
-        else if (isOperator("soldier") && this._soldierBuffUntil > this.now) movement = delta.clone().multiplyScalar(B.operators.soldier.enhance.speedMult);
+        else if (isOperator("bulwark") && ctx._barrier?.active) movement = delta.clone().multiplyScalar(0.5);
+        else if (isOperator("soldier") && ctx._soldierBuffUntil > ctx.now) movement = delta.clone().multiplyScalar(B.operators.soldier.enhance.speedMult);
       }
-      originalMoveActor(actor, movement);
-    };
+      original(actor, movement);
+    });
 
-    const originalUpdatePlayer = game.updatePlayer.bind(game);
-    game.updatePlayer = function updateOperatorPlayer(dt) {
+    wrap(game, "updatePlayer", (original, ctx, args) => {
+      const [dt] = args;
       // 마지막 이동 방향 추적 (돌진 방향 fallback 용)
       const lastMove = getWasmDir();
-      if (lastMove) this._lastMoveDir = lastMove.clone();
-      const dash = this._operatorDash;
+      if (lastMove) ctx._lastMoveDir = lastMove.clone();
+      const dash = ctx._operatorDash;
       if (!dash) {
-        originalUpdatePlayer(dt);
+        original(dt);
         return;
       }
-      if (!this.player.alive) {
-        this._operatorDash = null;
+      if (!ctx.player.alive) {
+        ctx._operatorDash = null;
         applyAppearance(operator());
         return;
       }
-      const keys = this.keys;
-      const mouseDown = this.mouse.down;
-      this.keys = new Set();
-      this.mouse.down = false;
-      originalUpdatePlayer(dt);
-      this.keys = keys;
-      this.mouse.down = mouseDown;
-      this._operatorForcedMove = true;
-      this.moveActor(this.player, dash.direction.clone().multiplyScalar(dash.speed * dt));
-      this._operatorForcedMove = false;
-      this.player.syncMesh();
+      const keys = ctx.keys;
+      const mouseDown = ctx.mouse.down;
+      ctx.keys = new Set();
+      ctx.mouse.down = false;
+      original(dt);
+      ctx.keys = keys;
+      ctx.mouse.down = mouseDown;
+      ctx._operatorForcedMove = true;
+      ctx.moveActor(ctx.player, dash.direction.clone().multiplyScalar(dash.speed * dt));
+      ctx._operatorForcedMove = false;
+      ctx.player.syncMesh();
       if (dash.kind === "gunslinger") {
-        for (const target of this.bots) {
-          if (!target.alive || dash.hit.has(target) || target.pos.distanceTo(this.player.pos) > GUN_KATA_RADIUS) continue;
+        for (const target of ctx.bots) {
+          if (!target.alive || dash.hit.has(target) || target.pos.distanceTo(ctx.player.pos) > GUN_KATA_RADIUS) continue;
           dash.hit.add(target);
-          this.damageActor(this.player, target, GUN_KATA_DAMAGE);
+          ctx.damageActor(ctx.player, target, GUN_KATA_DAMAGE);
         }
-        const progress = clamp((this.now - dash.startedAt) / Math.max(0.01, dash.until - dash.startedAt), 0, 1);
-        this.player.mesh.rotation.z += progress * Math.PI * 8;
+        const progress = clamp((ctx.now - dash.startedAt) / Math.max(0.01, dash.until - dash.startedAt), 0, 1);
+        ctx.player.mesh.rotation.z += progress * Math.PI * 8;
         for (const [index, piece] of getWeaponPieces().entries()) {
           const side = piece.userData.breachlineGunSide || Math.sign(piece.position.x) || (index % 2 ? 1 : -1);
           piece.userData.breachlineGunSide = side;
@@ -2847,107 +2832,106 @@
           // asset-visuals 의 건카타 자세와 동일: 왼손 0°, 오른손 180° (양 방향)
           piece.rotation.z = side < 0 ? 0 : Math.PI;
         }
-        if (this.now >= dash.nextFxAt) {
-          dash.nextFxAt = this.now + 0.045;
-          const spin = this.player.dir + progress * Math.PI * 8;
+        if (ctx.now >= dash.nextFxAt) {
+          dash.nextFxAt = ctx.now + 0.045;
+          const spin = ctx.player.dir + progress * Math.PI * 8;
           for (const side of [-1, 1]) {
             const angle = spin + side * Math.PI / 2;
-            const start = this.player.pos.clone().add(vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(13));
-            const end = this.player.pos.clone().add(vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(64));
+            const start = ctx.player.pos.clone().add(vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(13));
+            const end = ctx.player.pos.clone().add(vector(Math.cos(angle), Math.sin(angle)).multiplyScalar(64));
             createWorldStrip(start, end, 3.5, 0xffd166, { duration: 0.13, opacity: 0.85 });
           }
-          this.cameraShake = Math.max(this.cameraShake, 2.2);
+          ctx.cameraShake = Math.max(ctx.cameraShake, 2.2);
         }
       } else if (dash.kind === "hunter") {
-        const pulse = 0.5 + Math.sin((this.now - dash.startedAt) * 55) * 0.5;
-        this.player.ring.material.color.setHex(pulse > 0.45 ? 0xf4ffff : 0x64cfff);
-        this.player.body.material.color.setHex(pulse > 0.45 ? 0xeaffff : 0x77bfff);
-        if (this.now >= dash.nextFxAt) {
-          dash.nextFxAt = this.now + 0.05;
-          spawnAfterimage(this.player, pulse > 0.45 ? 0x9ef0ff : 0xffab63);
+        const pulse = 0.5 + Math.sin((ctx.now - dash.startedAt) * 55) * 0.5;
+        ctx.player.ring.material.color.setHex(pulse > 0.45 ? 0xf4ffff : 0x64cfff);
+        ctx.player.body.material.color.setHex(pulse > 0.45 ? 0xeaffff : 0x77bfff);
+        if (ctx.now >= dash.nextFxAt) {
+          dash.nextFxAt = ctx.now + 0.05;
+          spawnAfterimage(ctx.player, pulse > 0.45 ? 0x9ef0ff : 0xffab63);
         }
       } else if (dash.kind === "ninja") {
         // 대쉬 종료 시점에 현재 위치에 강화 연막을 생성한다.
-        if (this.now >= dash.until && !dash.smokeSpawned) {
+        if (ctx.now >= dash.until && !dash.smokeSpawned) {
           dash.smokeSpawned = true;
-          spawnNinjaSmokeAt(this.player.pos.clone());
-          createPulseDisc(this.player, NINJA_SMOKE_RADIUS, 0x9bb5ff, 0.5, 0.08);
-          this.canvas.dataset.ninjaSmokeAt = `${Math.round(this.player.pos.x)}:${Math.round(this.player.pos.y)}`;
+          spawnNinjaSmokeAt(ctx.player.pos.clone());
+          createPulseDisc(ctx.player, NINJA_SMOKE_RADIUS, 0x9bb5ff, 0.5, 0.08);
+          ctx.canvas.dataset.ninjaSmokeAt = `${Math.round(ctx.player.pos.x)}:${Math.round(ctx.player.pos.y)}`;
         }
-        if (this.now >= dash.nextFxAt) {
-          dash.nextFxAt = this.now + 0.05;
-          spawnAfterimage(this.player, 0x9bb5ff);
+        if (ctx.now >= dash.nextFxAt) {
+          dash.nextFxAt = ctx.now + 0.05;
+          spawnAfterimage(ctx.player, 0x9bb5ff);
         }
       }
-      if (this.now >= dash.until) {
-        this._operatorDash = null;
+      if (ctx.now >= dash.until) {
+        ctx._operatorDash = null;
         applyAppearance(operator());
-        this.canvas.dataset.lastDashDirection = `${dash.direction.x.toFixed(3)}:${dash.direction.y.toFixed(3)}`;
+        ctx.canvas.dataset.lastDashDirection = `${dash.direction.x.toFixed(3)}:${dash.direction.y.toFixed(3)}`;
       }
-    };
+    });
 
-    const originalVisible = game.isVisible.bind(game);
-    game.isVisible = function operatorVisibility(observer, target, coneDegrees, distance) {
+    wrap(game, "isVisible", (original, ctx, args) => {
+      const [observer, target, coneDegrees, distance] = args;
       // Ninja smoke is opaque from the inside, including for its owner.
-      const ninjaSmokeAt = (point) => this.smokes.find((smoke) => smoke.ninjaSmoke
-        && smoke.endAt > this.now && point.distanceTo(smoke.pos) < smoke.radius);
+      const ninjaSmokeAt = (point) => ctx.smokes.find((smoke) => smoke.ninjaSmoke
+        && smoke.endAt > ctx.now && point.distanceTo(smoke.pos) < smoke.radius);
       const observerNinjaSmoke = ninjaSmokeAt(observer.pos);
       if (observerNinjaSmoke && ninjaSmokeAt(target.pos) !== observerNinjaSmoke) return false;
       // 닌자 패시브: 연막 안에 있는 모든 적은 절대 시야로 식별된다 (벽/연막 무시).
-      if (observer === this.player && isOperator("ninja") && target !== observer && target.alive) {
-        if (this.isInsideSmoke(target.pos) && target.pos.distanceTo(observer.pos) <= distance) {
+      if (observer === ctx.player && isOperator("ninja") && target !== observer && target.alive) {
+        if (ctx.isInsideSmoke(target.pos) && target.pos.distanceTo(observer.pos) <= distance) {
           return true;
         }
       }
-      if (observer === this.player && isOperator("sentinel") && this._revealUntil > this.now) {
+      if (observer === ctx.player && isOperator("sentinel") && ctx._revealUntil > ctx.now) {
         const delta = target.pos.clone().sub(observer.pos);
         // 투시 스캔: 벽과 연막 모두 투시한다.
         return target.alive && delta.length() <= distance
           && Math.abs(angleDelta(Math.atan2(delta.y, delta.x), observer.dir)) <= coneDegrees * Math.PI / 360;
       }
       // 사냥꾼 피냄새: 일정 거리 내의 적을 벽 너머로 감지한다(360도, 나만 보임).
-      if (observer === this.player && isOperator("hunter") && this._bloodScentUntil > this.now
+      if (observer === ctx.player && isOperator("hunter") && ctx._bloodScentUntil > ctx.now
         && target !== observer && target.alive
         && target.pos.distanceTo(observer.pos) <= B.operators.hunter.bloodScent.range) {
         return true;
       }
-      const adjustedDistance = observer === this.player && isOperator("sniper") ? distance * 1.5 : distance;
-      const wideCone = observer === this.player ? wideViewDegrees() : null;
+      const adjustedDistance = observer === ctx.player && isOperator("sniper") ? distance * 1.5 : distance;
+      const wideCone = observer === ctx.player ? wideViewDegrees() : null;
       const adjustedCone = wideCone !== null ? wideCone : coneDegrees;
-      return originalVisible(observer, target, adjustedCone, adjustedDistance);
-    };
+      return original(observer, target, adjustedCone, adjustedDistance);
+    });
 
-    const originalTraceVision = game.traceVision.bind(game);
-    game.traceVision = function operatorTraceVision(origin, direction, distance) {
+    wrap(game, "traceVision", (original, ctx, args) => {
+      const [origin, direction, distance] = args;
       let adjustedDirection = direction;
       const wideCone = wideViewDegrees();
-      if (wideCone !== null && origin.distanceToSquared(this.player.pos) < 1) {
+      if (wideCone !== null && origin.distanceToSquared(ctx.player.pos) < 1) {
         const angle = Math.atan2(direction.y, direction.x);
         const halfView = wideCone * Math.PI / 360;
-        const clampedAngle = this.player.dir + clamp(angleDelta(angle, this.player.dir), -halfView, halfView);
+        const clampedAngle = ctx.player.dir + clamp(angleDelta(angle, ctx.player.dir), -halfView, halfView);
         adjustedDirection = vector(Math.cos(clampedAngle), Math.sin(clampedAngle));
       }
       // RB-08 투시 스캔 중에는 시야 부채꼴이 벽·연막에 잘리지 않는다.
-      if (isOperator("sentinel") && this._revealUntil > this.now && origin.distanceToSquared(this.player.pos) < 1) {
+      if (isOperator("sentinel") && ctx._revealUntil > ctx.now && origin.distanceToSquared(ctx.player.pos) < 1) {
         return origin.clone().add(adjustedDirection.clone().multiplyScalar(distance));
       }
-      return originalTraceVision(origin, adjustedDirection, isOperator("sniper") ? distance * 1.5 : distance);
-    };
+      return original(origin, adjustedDirection, isOperator("sniper") ? distance * 1.5 : distance);
+    });
 
-    const originalOperatorVisibility = game.updateVisibility.bind(game);
-    game.updateVisibility = function updateIronWideVision() {
+    wrap(game, "updateVisibility", (original, ctx) => {
       const wideCone = wideViewDegrees();
-      if (wideCone !== null) this.visibilityDirty = true;
-      originalOperatorVisibility();
-      if (wideCone === null || !this.visibilityMesh?.geometry || !this.visibilityBorder?.geometry) return;
+      if (wideCone !== null) ctx.visibilityDirty = true;
+      original();
+      if (wideCone === null || !ctx.visibilityMesh?.geometry || !ctx.visibilityBorder?.geometry) return;
 
       const halfView = wideCone * Math.PI / 360;
       const segments = 96;
       const points = [];
       for (let index = 0; index <= segments; index++) {
-        const angle = this.player.dir - halfView + index / segments * halfView * 2;
-        points.push(this.traceVision(
-          this.player.pos,
+        const angle = ctx.player.dir - halfView + index / segments * halfView * 2;
+        points.push(ctx.traceVision(
+          ctx.player.pos,
           vector(Math.cos(angle), Math.sin(angle)),
           B.vision.maxRange,
         ));
@@ -2956,30 +2940,30 @@
       const positions = [];
       for (let index = 0; index < points.length - 1; index++) {
         positions.push(
-          this.player.pos.x, this.player.pos.y, 12,
+          ctx.player.pos.x, ctx.player.pos.y, 12,
           points[index].x, points[index].y, 12,
           points[index + 1].x, points[index + 1].y, 12,
         );
       }
-      const oldGeometry = this.visibilityMesh.geometry;
+      const oldGeometry = ctx.visibilityMesh.geometry;
       const oldPosition = oldGeometry.getAttribute("position");
       const geometry = new oldGeometry.constructor();
       geometry.setAttribute("position", new oldPosition.constructor(positions, 3));
       geometry.userData.ironViewDegrees = wideCone;
-      this.visibilityMesh.geometry = geometry;
+      ctx.visibilityMesh.geometry = geometry;
       oldGeometry.dispose();
 
-      const Vector3 = this.camera.position.constructor;
+      const Vector3 = ctx.camera.position.constructor;
       const borderPoints = [
-        new Vector3(this.player.pos.x, this.player.pos.y, 13),
+        new Vector3(ctx.player.pos.x, ctx.player.pos.y, 13),
         ...points.map((point) => new Vector3(point.x, point.y, 13)),
-        new Vector3(this.player.pos.x, this.player.pos.y, 13),
+        new Vector3(ctx.player.pos.x, ctx.player.pos.y, 13),
       ];
-      const oldBorder = this.visibilityBorder.geometry;
+      const oldBorder = ctx.visibilityBorder.geometry;
       const borderGeometry = new oldBorder.constructor().setFromPoints(borderPoints);
-      this.visibilityBorder.geometry = borderGeometry;
+      ctx.visibilityBorder.geometry = borderGeometry;
       oldBorder.dispose();
-    };
+    });
 
     const updateSummons = (dt) => {
       for (let index = game._summons.length - 1; index >= 0; index--) {
@@ -3076,7 +3060,7 @@
         let facingAngle = Math.atan2(delta.y, delta.x);
         if (summon.swingAt && game.now - summon.swingAt < 0.32) {
           const progress = (game.now - summon.swingAt) / 0.32;
-          const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          const eased = easeSwing(progress);
           facingAngle += -0.7 + eased * 1.4;
           if (game.now >= summon.swingTrailAt) {
             summon.swingTrailAt = game.now + 0.03;
@@ -3123,19 +3107,19 @@
       }
     };
 
-    const originalUpdateBots = game.updateBots.bind(game);
-    game.updateBots = function updateBotsMultiplayerSafe(dt) {
+    wrap(game, "updateBots", (original, ctx, args) => {
+      const [dt] = args;
       // 멀티플레이 대비: 원격 플레이어 액터(_remote)는 AI 제어에서 제외한다.
       const remote = [];
-      for (let index = this.bots.length - 1; index >= 0; index--) {
-        if (!this.bots[index]._remote) continue;
-        remote.push(this.bots.splice(index, 1)[0]);
+      for (let index = ctx.bots.length - 1; index >= 0; index--) {
+        if (!ctx.bots[index]._remote) continue;
+        remote.push(ctx.bots.splice(index, 1)[0]);
       }
       if (game._summons.length) {
         const engaged = [];
-        for (const bot of this.bots) {
+        for (const bot of ctx.bots) {
           // 원격 플레이어 액터(_remote)는 서버 동기화 대상 — 로컬 교전 AI 제외
-          if (!bot.alive || bot._remote || bot.team === "player" || bot.flashedUntil > this.now) continue;
+          if (!bot.alive || bot._remote || bot.team === "player" || bot.flashedUntil > ctx.now) continue;
           const summon = nearestSummonThreat(bot);
           if (!summon) continue;
           engaged.push(bot);
@@ -3145,87 +3129,71 @@
           // 교전 중인 봇을 잠시 제외하고 나머지 AI를 돌린다.
           const held = [];
           for (const bot of engaged) {
-            const index = this.bots.indexOf(bot);
+            const index = ctx.bots.indexOf(bot);
             if (index >= 0) {
               held.push([bot, index]);
-              this.bots.splice(index, 1);
+              ctx.bots.splice(index, 1);
             }
           }
-          originalUpdateBots(dt);
+          original(dt);
           for (const [bot, index] of held) {
-            this.bots.splice(Math.min(index, this.bots.length), 0, bot);
+            ctx.bots.splice(Math.min(index, ctx.bots.length), 0, bot);
             // 슬로우 링 색상(개구리) 보정
             if (bot.ring?.material) {
-              bot.ring.material.color.setHex(bot.slowUntil > this.now ? 0x8ab4ff : 0xffb0ac);
+              bot.ring.material.color.setHex(bot.slowUntil > ctx.now ? 0x8ab4ff : 0xffb0ac);
             }
           }
-          for (const bot of remote) this.bots.push(bot);
+          for (const bot of remote) ctx.bots.push(bot);
           return;
         }
       }
-      originalUpdateBots(dt);
-      for (const bot of remote) this.bots.push(bot);
-    };
+      original(dt);
+      for (const bot of remote) ctx.bots.push(bot);
+    });
 
     // 세그먼트-원 충돌 판정. 코어 _p 는 투사체가 히트박스 내부에서 생성되면(근거리
-    // 점사) 놓치는 결함이 있어, 보정 패스에서 이 함수로 재검사한다.
+    // 점사) 놓치는 결함이 있어, 보정 패스에서 이 함수(shared-utils 의 단일 구현)로 재검사한다.
     const SUMMON_HIT_RADIUS = B.operators.reaper.summon.hitRadius;
-    const segmentCircleHit = (start, end, center, radius) => {
-      const sx = end.x - start.x;
-      const sy = end.y - start.y;
-      const lengthSq = sx * sx + sy * sy;
-      let t = 0;
-      if (lengthSq > 1e-9) {
-        t = ((center.x - start.x) * sx + (center.y - start.y) * sy) / lengthSq;
-        t = clamp(t, 0, 1);
-      }
-      const px = start.x + sx * t;
-      const py = start.y + sy * t;
-      const dx = center.x - px;
-      const dy = center.y - py;
-      return dx * dx + dy * dy <= radius * radius;
-    };
-
     // 히트박스 판정 평준화: 모든 투사체(권총/샷건 펠릿 포함)에 동일한 완화 판정을
     // 적용해, 시각(탄환 폭)과 히트박스가 어긋나 보이는 경우를 제거한다.
     // 반경 +5 버퍼 + 코어가 놓치는 "근거리 내부 생성" 케이스 보정.
     const PROJECTILE_HIT_BUFFER = B.projectiles.hitBuffer;
-    const originalUpdateProjectiles = game.updateProjectiles.bind(game);
-    game.updateProjectiles = function updateProjectilesWithFairHits(dt) {
-      for (const projectile of this.projectiles) {
+    wrap(game, "updateProjectiles", (original, ctx, args) => {
+      const [dt] = args;
+      for (const projectile of ctx.projectiles) {
         projectile._prevPos = projectile.pos.clone();
       }
-      originalUpdateProjectiles(dt);
+      original(dt);
 
       // 캐릭터 대상 보정 (모든 팀의 투사체에 동일 적용)
-      for (let index = this.projectiles.length - 1; index >= 0; index--) {
-        const projectile = this.projectiles[index];
+      for (let index = ctx.projectiles.length - 1; index >= 0; index--) {
+        const projectile = ctx.projectiles[index];
         if (!projectile?._prevPos) continue;
         // 방벽 흡수는 서버가 확정한다(멀티플레이) — 여기서는 하지 않는다.
-        for (const target of [this.player, ...this.bots]) {
+        for (const target of [ctx.player, ...ctx.bots]) {
           if (target === projectile.source || !target.alive) continue;
           if (!segmentCircleHit(projectile._prevPos, projectile.pos, target.pos, target.radius + PROJECTILE_HIT_BUFFER)) continue;
           projectile.source.hits++;
-          this.damageActor(projectile.source, target, projectile.damage);
-          this.removeProjectile(index);
+          ctx.damageActor(projectile.source, target, projectile.damage);
+          ctx.removeProjectile(index);
           break;
         }
       }
 
       // 소환수도 총알에 맞아 죽는다. (적 팀 투사체만)
       if (!game._summons.length) return;
-      for (let index = this.projectiles.length - 1; index >= 0; index--) {
-        const projectile = this.projectiles[index];
+      for (let index = ctx.projectiles.length - 1; index >= 0; index--) {
+        const projectile = ctx.projectiles[index];
         if (!projectile || projectile.source?.team !== "enemy") continue;
         for (let summonIndex = game._summons.length - 1; summonIndex >= 0; summonIndex--) {
           const summon = game._summons[summonIndex];
           if (!segmentCircleHit(projectile._prevPos, projectile.pos, summon.pos, SUMMON_HIT_RADIUS + PROJECTILE_HIT_BUFFER)) continue;
-          this.removeProjectile(index);
+          ctx.removeProjectile(index);
           damageSummon(summon.id, projectile.damage);
           break;
         }
       }
-    };
+    });
 
     // 섬광 피격 시 캐릭터 주변에 남은 지속시간을 보여주는 점멸 링
     // (다른 플레이어가 "섬광에 맞았다 + 얼마나 남았는지"를 식별할 수 있다)
@@ -3478,16 +3446,16 @@
       }
     };
 
-    const originalStep = game.step.bind(game);
-    game.step = function operatorStep(dt) {
-      originalStep(dt);
-      for (const actor of [this.player, ...this.bots]) {
-        if (!actor.alive || actor.hp >= (actor.maxHp || 100) || this.now - (actor.lastDamageAt ?? -Infinity) < 5) continue;
+    wrap(game, "step", (original, ctx, args) => {
+      const [dt] = args;
+      original(dt);
+      for (const actor of [ctx.player, ...ctx.bots]) {
+        if (!actor.alive || actor.hp >= (actor.maxHp || 100) || ctx.now - (actor.lastDamageAt ?? -Infinity) < 5) continue;
         actor.hp = Math.min(actor.maxHp || 100, actor.hp + 5 * dt);
       }
       // RB-08 투시 스캔 활성 중 식별 링 점멸 — 주변에서 능력 상태를 알 수 있게 한다.
-      if (isOperator("sentinel") && this.player.alive && this._revealUntil > this.now) {
-        this.player.ring.material.color.setHex(Math.sin(this.now * 11) > 0 ? 0xff3b45 : 0xffffff);
+      if (isOperator("sentinel") && ctx.player.alive && ctx._revealUntil > ctx.now) {
+        ctx.player.ring.material.color.setHex(Math.sin(ctx.now * 11) > 0 ? 0xff3b45 : 0xffffff);
       }
       syncFlashHalos();
       updateBarrier(dt);
@@ -3503,15 +3471,14 @@
       updateOperatorFx();
       updateMeleeAnimation();
       updateRailChargeFx();
-    };
+    });
 
-    const originalRenderUi = game.renderUi.bind(game);
-    game.renderUi = function renderOperatorUi() {
-      originalRenderUi();
-      if (!this.activeOperatorId) return;
+    wrap(game, "renderUi", (original, ctx) => {
+      original();
+      if (!ctx.activeOperatorId) return;
       const selected = operator();
-      const maxHp = this.player.maxHp || selected.hp || B.player.hp;
-      const hp = Math.max(0, Math.min(maxHp, this.player.hp));
+      const maxHp = ctx.player.maxHp || selected.hp || B.player.hp;
+      const hp = Math.max(0, Math.min(maxHp, ctx.player.hp));
       const hpRatio = maxHp > 0 ? hp / maxHp : 0;
       const healthText = document.querySelector("#health-text");
       const healthBar = document.querySelector("#health-bar");
@@ -3519,21 +3486,21 @@
       if (healthBar) healthBar.style.width = `${hpRatio * 100}%`;
       ui.operator.textContent = `${selected.name} // ${selected.koreanName}`;
       ui.operator.style.color = selected.color;
-      ui.weapon.textContent = this.player.weapon.name;
+      ui.weapon.textContent = ctx.player.weapon.name;
       if (["reaper", "ninja"].includes(selected.id)) {
         ui.ammo.textContent = "∞";
         ui.reserve.textContent = "∞";
       } else if (["frog", "bulwark"].includes(selected.id)) {
-        ui.ammo.textContent = `${this.player.ammo}`;
+        ui.ammo.textContent = `${ctx.player.ammo}`;
         ui.reserve.textContent = "∞";
-      } else if (this.player.reserve >= 9999) {
+      } else if (ctx.player.reserve >= 9999) {
         // 무제한 장탄 무기는 9999 대신 현재 최대 장탄수를 표시한다. (예: 30/30)
-        ui.reserve.textContent = `${this.player.weapon.magSize}`;
+        ui.reserve.textContent = `${ctx.player.weapon.magSize}`;
       }
       const badgeCount = (value) => (Number.isFinite(value) ? String(value || 0) : "∞");
-      ui.fragCount.textContent = badgeCount(this.player.fragGrenades);
-      ui.flashCount.textContent = badgeCount(this.player.flashGrenades);
-      ui.smokeCount.textContent = badgeCount(this.player.smokeGrenades);
+      ui.fragCount.textContent = badgeCount(ctx.player.fragGrenades);
+      ui.flashCount.textContent = badgeCount(ctx.player.flashGrenades);
+      ui.smokeCount.textContent = badgeCount(ctx.player.smokeGrenades);
       updateGadgetVisibility();
 
       const secondary = selected.controls.secondary;
@@ -3582,13 +3549,13 @@
       // 서버 기준 전체 로스터로 센다(getTeamCounts). 없으면(싱글) 로컬 봇으로 센다.
       let allyAlive;
       let enemyAlive;
-      const teamCounts = this.getTeamCounts?.();
+      const teamCounts = ctx.getTeamCounts?.();
       if (teamCounts) {
         allyAlive = teamCounts.ally;
         enemyAlive = teamCounts.enemy;
       } else {
-        const bots = this.bots || [];
-        allyAlive = this.player && this.player.alive !== false ? 1 : 0;
+        const bots = ctx.bots || [];
+        allyAlive = ctx.player && ctx.player.alive !== false ? 1 : 0;
         enemyAlive = 0;
         for (const bot of bots) {
           if (!bot.alive) continue;
@@ -3603,7 +3570,7 @@
       // 슬롯1 배지: 군인 섬광탄·폭탄마 수류탄은 무제한(∞). 슬롯2 배지: 스나이퍼 덫 잔여 개수.
       const totals = SLOT_COOLDOWN_TOTALS[selected.id] || { secondary: 0, ability: 0 };
       const slot1Count = (selected.id === "soldier" || selected.id === "demolitionist") ? Infinity : 0;
-      const slot2Count = selected.id === "sniper" ? Math.max(0, B.operators.sniper.trap.maxActive - (this._traps?.length || 0)) : 0;
+      const slot2Count = selected.id === "sniper" ? Math.max(0, B.operators.sniper.trap.maxActive - (ctx._traps?.length || 0)) : 0;
       renderSkillSlot(ui.slot1, {
         label: secondary,
         remaining: secondaryCooldown,
@@ -3617,33 +3584,33 @@
         count: slot2Count,
       });
 
-      if (selected.id === "sentinel" && this._railChargeStartedAt !== null) {
-        const charge = clamp(this.now - this._railChargeStartedAt, 0, 1);
+      if (selected.id === "sentinel" && ctx._railChargeStartedAt !== null) {
+        const charge = clamp(ctx.now - ctx._railChargeStartedAt, 0, 1);
         ui.charge.classList.add("active");
         ui.chargeName.textContent = "RAILGUN CHARGE";
         ui.chargeBar.style.width = `${charge * 100}%`;
         ui.chargeRange.textContent = `${Math.round(charge * 100)}%`;
-        this.player.ring.material.color.setHex(this._revealUntil > this.now ? 0xff3b45 : 0x55f0b0);
+        ctx.player.ring.material.color.setHex(ctx._revealUntil > ctx.now ? 0xff3b45 : 0x55f0b0);
       }
-      this.canvas.dataset.operatorCooldown = cooldown.toFixed(2);
-      this.canvas.dataset.secondaryCooldown = secondaryCooldown.toFixed(2);
-      this.canvas.dataset.abilityCooldown = abilityCooldown.toFixed(2);
-      this.canvas.dataset.specialCooldownSeconds = String(SPECIAL_COOLDOWN);
-      this.canvas.dataset.shieldViewDegrees = String(SHIELD_VIEW_DEGREES);
-      this.canvas.dataset.barrierHp = String(Math.ceil(this._barrier?.hp ?? 0));
-      this.canvas.dataset.weaponRpm = String(this.player.weapon.rpm);
-      this.canvas.dataset.weaponReloadSeconds = String(this.player.weapon.reload);
-      this.canvas.dataset.demolitionistCharging = "disabled";
-      this.canvas.dataset.hunterInvulnerable = String(Boolean(this._operatorDash?.invulnerable));
+      ctx.canvas.dataset.operatorCooldown = cooldown.toFixed(2);
+      ctx.canvas.dataset.secondaryCooldown = secondaryCooldown.toFixed(2);
+      ctx.canvas.dataset.abilityCooldown = abilityCooldown.toFixed(2);
+      ctx.canvas.dataset.specialCooldownSeconds = String(SPECIAL_COOLDOWN);
+      ctx.canvas.dataset.shieldViewDegrees = String(SHIELD_VIEW_DEGREES);
+      ctx.canvas.dataset.barrierHp = String(Math.ceil(ctx._barrier?.hp ?? 0));
+      ctx.canvas.dataset.weaponRpm = String(ctx.player.weapon.rpm);
+      ctx.canvas.dataset.weaponReloadSeconds = String(ctx.player.weapon.reload);
+      ctx.canvas.dataset.demolitionistCharging = "disabled";
+      ctx.canvas.dataset.hunterInvulnerable = String(Boolean(ctx._operatorDash?.invulnerable));
 
       // 아이언 방벽 상태 표시
       const barrierEl = document.getElementById("barrier-status");
       if (barrierEl) {
-        if (isOperator("bulwark") && this._barrier) {
-          const barrier = this._barrier;
+        if (isOperator("bulwark") && ctx._barrier) {
+          const barrier = ctx._barrier;
           barrierEl.classList.remove("hidden");
-          if (this.now < barrier.disabledUntil) {
-            barrierEl.textContent = `BARRIER ${Math.ceil(barrier.disabledUntil - this.now)}s`;
+          if (ctx.now < barrier.disabledUntil) {
+            barrierEl.textContent = `BARRIER ${Math.ceil(barrier.disabledUntil - ctx.now)}s`;
             barrierEl.className = "barrier-status broken";
           } else {
             barrierEl.textContent = `BARRIER ${Math.ceil(barrier.hp)}/${BARRIER_MAX_HP}`;
@@ -3653,7 +3620,7 @@
           barrierEl.classList.add("hidden");
         }
       }
-    };
+    });
 
     game.canvas.dataset.operatorSystem = "10-class-v2";
   };

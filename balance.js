@@ -35,10 +35,11 @@
 
     /* 투척물/유탄 */
     gadgets: {
-      flash: { radius: 200, duration: 1, fuse: 1.5, count: 2 },     // 군인 보유 수
-      smoke: { radius: 150, duration: 10, fuse: 1.5, count: 2 },    // 스나이퍼 보유 수
-      frag: { radius: 100, damage: 100, fuse: 2, count: 2 },
+      flash: { radius: 200, duration: 1, fuse: 1.0, count: 2 },     // 군인 보유 수
+      smoke: { radius: 150, duration: 10, fuse: 1.0, count: 2 },    // 스나이퍼 보유 수
+      frag: { radius: 100, damage: 100, fuse: 1.5, count: 2 },
       launcher: { radius: 67, damage: 60, speed: 620 },
+      throwSpeed: 640, // 수류탄·연막탄·섬광탄 투척 초기 속도 (투척 거리 기준)
     },
 
     /* 병과별 스킬/무기 */

@@ -5,8 +5,9 @@
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
-    "build:cloudflare": "node scripts/build-public.mjs",
+    "test": "node --test \"scripts/tests/*.test.mjs\"",
     "test:multiplayer": "node scripts/test-multiplayer.mjs",
+    "build:cloudflare": "node scripts/build-public.mjs",
     "dev:cloudflare": "npm run build:cloudflare && wrangler dev",
     "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy"
   },
